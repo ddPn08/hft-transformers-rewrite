@@ -1,3 +1,5 @@
+lightning_logs/
+outputs/
 maestro-v3.0.0-preprocessed/
 
 # Byte-compiled / optimized / DLL files
