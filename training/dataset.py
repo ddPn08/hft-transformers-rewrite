@@ -63,7 +63,7 @@ class Dataset(data.Dataset):
             feature_path, map_location="cpu", weights_only=True
         )
 
-        zero_value = torch.log(self.config.feature.log_offset)
+        zero_value = torch.log(torch.tensor(self.config.feature.log_offset))
         if mapping.feature.onset_frame < 0:
             pad = torch.zeros(
                 -mapping.feature.onset_frame, feature.shape[1], dtype=feature.dtype
