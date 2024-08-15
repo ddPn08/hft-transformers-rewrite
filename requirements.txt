@@ -1,3 +1,5 @@
 lightning
 pretty_midi
 mir_eval
+fire
+pydantic
