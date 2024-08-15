@@ -1,9 +1,11 @@
+import os
+
 import fire
 import numpy as np
 import torch
 import torch.utils.data as data
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import TQDMProgressBar
+from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
 
 from modules.transcriber import Transcriber, TranscriberConfig
 from training.config import DatasetConfig
@@ -22,11 +24,15 @@ class MyProgressBar(TQDMProgressBar):
 def main(
     dataset_config: str = "./dataset.json",
     dataset_dir: str = "./maestro-v3.0.0-preprocessed",
+    output_dir: str = "./output",
     accelerator: str = "gpu",
     devices: str = "0,",
     max_train_epochs: int = 100,
     batch_size: int = 1,
     num_workers: int = 1,
+    logger: str = "none",
+    logger_name: str = "training",
+    logger_project: str = "hft-transformer",
 ):
     with open(dataset_config, "r") as f:
         config: DatasetConfig = DatasetConfig.model_validate_json(f.read())
@@ -39,6 +45,7 @@ def main(
         num_workers=num_workers,
         collate_fn=dataset.collate_fn,
     )
+
     params = TranscriberConfig(
         n_frame=config.input.num_frame,
         n_bin=config.feature.n_bins,
@@ -55,8 +62,27 @@ def main(
     )
     transcriber = Transcriber(params)
     module = TranscriberModule(transcriber, torch.optim.Adam)
-    callbacks = [MyProgressBar()]
+
+    checkpoint_dir = os.path.join(output_dir, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    if logger == "wandb":
+        from pytorch_lightning.loggers import WandbLogger
+
+        logger = WandbLogger(
+            name=logger_name,
+            project=logger_project,
+        )
+    else:
+        logger = None
+
+    callbacks = [
+        MyProgressBar(),
+        ModelCheckpoint(every_n_train_steps=50, dirpath=checkpoint_dir),
+    ]
+
     trainer = Trainer(
+        logger=logger,
         accelerator=accelerator,
         devices=devices,
         max_epochs=max_train_epochs,
