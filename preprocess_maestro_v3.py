@@ -162,7 +162,7 @@ def main(
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
 
-    metadata = [m for m in metadata if m.year == 2015 and m.split == "train"]
+    metadata = [m for m in metadata if m.split == "train"]
 
     metadata_path = os.path.join(dest_path, "metadata.json")
     label_dir = os.path.join(dest_path, "labels")
