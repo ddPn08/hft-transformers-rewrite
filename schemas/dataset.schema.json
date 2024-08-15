@@ -1,0 +1,120 @@
+{
+    "$defs": {
+        "FeatureConfig": {
+            "properties": {
+                "sampling_rate": {
+                    "default": 16000,
+                    "title": "Sampling Rate",
+                    "type": "integer"
+                },
+                "hop_sample": {
+                    "default": 256,
+                    "title": "Hop Sample",
+                    "type": "integer"
+                },
+                "mel_bins": {
+                    "default": 256,
+                    "title": "Mel Bins",
+                    "type": "integer"
+                },
+                "n_bins": {
+                    "default": 256,
+                    "title": "N Bins",
+                    "type": "integer"
+                },
+                "fft_bins": {
+                    "default": 2048,
+                    "title": "Fft Bins",
+                    "type": "integer"
+                },
+                "window_length": {
+                    "default": 2048,
+                    "title": "Window Length",
+                    "type": "integer"
+                },
+                "log_offset": {
+                    "default": 1e-08,
+                    "title": "Log Offset",
+                    "type": "number"
+                },
+                "window_mode": {
+                    "default": "hann",
+                    "title": "Window Mode",
+                    "type": "string"
+                },
+                "pad_mode": {
+                    "default": "constant",
+                    "title": "Pad Mode",
+                    "type": "string"
+                }
+            },
+            "title": "FeatureConfig",
+            "type": "object"
+        },
+        "InputConfig": {
+            "properties": {
+                "margin_b": {
+                    "default": 32,
+                    "title": "Margin B",
+                    "type": "integer"
+                },
+                "margin_f": {
+                    "default": 32,
+                    "title": "Margin F",
+                    "type": "integer"
+                },
+                "num_frame": {
+                    "default": 128,
+                    "title": "Num Frame",
+                    "type": "integer"
+                }
+            },
+            "title": "InputConfig",
+            "type": "object"
+        },
+        "MidiConfig": {
+            "properties": {
+                "pitch_min": {
+                    "default": 21,
+                    "title": "Pitch Min",
+                    "type": "integer"
+                },
+                "pitch_max": {
+                    "default": 108,
+                    "title": "Pitch Max",
+                    "type": "integer"
+                },
+                "num_notes": {
+                    "default": 88,
+                    "title": "Num Notes",
+                    "type": "integer"
+                },
+                "num_velocity": {
+                    "default": 128,
+                    "title": "Num Velocity",
+                    "type": "integer"
+                }
+            },
+            "title": "MidiConfig",
+            "type": "object"
+        }
+    },
+    "properties": {
+        "feature": {
+            "$ref": "#/$defs/FeatureConfig"
+        },
+        "input": {
+            "$ref": "#/$defs/InputConfig"
+        },
+        "midi": {
+            "$ref": "#/$defs/MidiConfig"
+        }
+    },
+    "required": [
+        "feature",
+        "input",
+        "midi"
+    ],
+    "title": "DatasetConfig",
+    "type": "object"
+}
