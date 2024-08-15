@@ -12,7 +12,7 @@ from pydantic import RootModel
 
 from preprocess.midi import LABELS, create_label, create_note
 from training.config import DatasetConfig
-from training.dataset import Metadata
+from training.dataset import DatasetItem, FrameInfomation, Metadata
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -29,7 +29,7 @@ def process_metadata(
     device: str,
 ):
     for m in tqdm.tqdm(metadata, desc=f"CreateLabel {idx}", position=idx):
-        basename = m.midi_filename.replace("/", "-")
+        basename = os.path.basename(m.midi_filename.replace("/", "-"))
 
         all_exists = all(
             os.path.exists(os.path.join(label_dir, f"{basename}.{label}.json"))
@@ -62,7 +62,7 @@ def process_metadata(
     ).to(device)
 
     for m in tqdm.tqdm(metadata, desc=f"CreateLogMelSpec {idx}", position=idx):
-        basename = m.midi_filename.replace("/", "-")
+        basename = os.path.basename(m.midi_filename.replace("/", "-"))
         log_melspec_path = os.path.join(features_dir, f"{basename}.pt")
 
         if os.path.exists(log_melspec_path) and not force_reprocess:
@@ -82,6 +82,60 @@ def process_metadata(
             log_melspec,
             log_melspec_path,
         )
+
+
+def mapping_dataset(
+    metadata: List[Metadata],
+    dataset_path: str,
+    config: DatasetConfig,
+):
+    dataset: List[DatasetItem] = []
+    for m in tqdm.tqdm(metadata):
+        basename = os.path.basename(m.midi_filename.replace("/", "-"))
+        feature = torch.load(
+            os.path.join(dataset_path, "features", f"{basename}.pt"), weights_only=True
+        )
+        labels = {}
+        for label in LABELS:
+            with open(
+                os.path.join(dataset_path, "labels", f"{basename}.{label}.json"), "r"
+            ) as f:
+                arr = json.load(f)
+                labels[label] = torch.tensor(arr)
+
+        num_frames = feature.shape[0]
+        label_num_frames = labels["mpe"].shape[0]
+
+        if num_frames < label_num_frames:
+            logger.warning(f"Feature frames are less than label frames: {basename}")
+
+        num_frames = max(num_frames, label_num_frames)
+
+        items = num_frames // config.input.num_frame
+
+        for j in range(items):
+            start_frame = j * config.input.num_frame
+            end_frame = start_frame + config.input.num_frame
+
+            spec_start_frame = start_frame - config.input.margin_b
+            spec_end_frame = end_frame + config.input.margin_f
+
+            if spec_end_frame > num_frames:
+                continue
+
+            dataset.append(
+                DatasetItem(
+                    basename=basename,
+                    feature=FrameInfomation(
+                        onset_frame=spec_start_frame, offset_frame=spec_end_frame
+                    ),
+                    label=FrameInfomation(
+                        onset_frame=start_frame, offset_frame=end_frame
+                    ),
+                )
+            )
+
+    return dataset
 
 
 def main(
@@ -146,6 +200,16 @@ def main(
 
     for p in processes:
         p.join()
+
+    mapping = mapping_dataset(metadata, dest_path, config)
+
+    mapping_path = os.path.join(dest_path, "mapping.json")
+    with open(mapping_path, "w") as f:
+        f.write(RootModel(mapping).model_dump_json())
+
+    config_path = os.path.join(dest_path, "config.json")
+    with open(config_path, "w") as f:
+        f.write(config.model_dump_json())
 
 
 if __name__ == "__main__":
