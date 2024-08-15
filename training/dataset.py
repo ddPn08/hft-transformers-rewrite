@@ -63,8 +63,8 @@ class Dataset(data.Dataset):
             feature_path, map_location="cpu", weights_only=True
         )
 
+        zero_value = torch.log(self.config.feature.log_offset)
         if mapping.feature.onset_frame < 0:
-            zero_value = torch.log(self.config.feature.log_offset)
             pad = torch.zeros(
                 -mapping.feature.onset_frame, feature.shape[1], dtype=feature.dtype
             )
@@ -74,7 +74,16 @@ class Dataset(data.Dataset):
                 mapping.feature.offset_frame - mapping.feature.onset_frame
             )
 
-        spec = (feature[mapping.feature.onset_frame : mapping.feature.offset_frame]).T
+        feature = feature[mapping.feature.onset_frame : mapping.feature.offset_frame]
+        if feature.shape[0] < self.num_frames:
+            pad = torch.zeros(
+                self.num_frames - feature.shape[0],
+                feature.shape[1],
+                dtype=feature.dtype,
+            )
+            feature = torch.cat([feature, pad.fill_(zero_value)], dim=0)
+
+        spec = feature.T
         for label in labels:
             labels[label] = labels[label][
                 mapping.label.onset_frame : mapping.label.offset_frame
