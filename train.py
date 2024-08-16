@@ -16,6 +16,7 @@ from training.module import TranscriberModule
 class MyProgressBar(TQDMProgressBar):
     def get_metrics(self, trainer, pl_module):
         items = super().get_metrics(trainer, pl_module)
+        items['loss'] = pl_module.all_loss[-1] if pl_module.all_loss else float("nan")
         items["all_loss_mean"] = np.mean(pl_module.all_loss or float("nan"))
         items["epoch_loss_mean"] = np.mean(pl_module.epoch_loss or float("nan"))
         return items

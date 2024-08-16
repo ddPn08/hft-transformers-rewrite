@@ -1,12 +1,10 @@
-import json
 import os
-from typing import List
+from typing import Dict, List
 
 import torch
 import torch.utils.data as data
 from pydantic import BaseModel, TypeAdapter
 
-from preprocess.midi import LABELS
 from training.config import DatasetConfig
 
 
@@ -47,39 +45,17 @@ class Dataset(data.Dataset):
         self.labels_dir = os.path.join(dir, "labels")
         self.num_frames = num_frames
 
-        self.features = {}
-        self.labels = {}
-
-        for mapping in self.datamapping:
-            basename = mapping.basename
-            if basename in self.features:
-                continue
-            feature_path = os.path.join(self.features_dir, basename + ".pt")
-            self.features[basename] = torch.load(
-                feature_path, map_location="cpu", weights_only=True
-            )
-            data = {}
-            for label in LABELS:
-                label_path = os.path.join(self.labels_dir, basename + f".{label}.json")
-                with open(label_path, "r") as f:
-                    arr = json.load(f)
-                    data[label] = torch.tensor(arr)
-            self.labels[basename] = data
-
     def __getitem__(self, idx: int):
         mapping = self.datamapping[idx]
+
         feature_path = os.path.join(self.features_dir, mapping.basename + ".pt")
-        labels = {}
-        for label in LABELS:
-            label_path = os.path.join(
-                self.labels_dir, mapping.basename + f".{label}.json"
-            )
-            with open(label_path, "r") as f:
-                arr = json.load(f)
-                labels[label] = torch.tensor(arr)
+        label_path = os.path.join(self.labels_dir, mapping.basename + ".pt")
 
         feature: torch.Tensor = torch.load(
             feature_path, map_location="cpu", weights_only=True
+        )
+        labels: Dict[str, torch.Tensor] = torch.load(
+            label_path, map_location="cpu", weights_only=True
         )
 
         zero_value = torch.log(torch.tensor(self.config.feature.log_offset))
@@ -94,17 +70,23 @@ class Dataset(data.Dataset):
             )
 
         feature = feature[mapping.feature.onset_frame : mapping.feature.offset_frame]
-        if feature.shape[0] < self.num_frames:
+        num_feature_frames = (
+            self.config.input.margin_b + self.num_frames + self.config.input.margin_f
+        )
+        if feature.shape[0] < num_feature_frames:
             pad = torch.zeros(
-                self.num_frames - feature.shape[0],
+                num_feature_frames - feature.shape[0],
                 feature.shape[1],
                 dtype=feature.dtype,
             )
             feature = torch.cat([feature, pad.fill_(zero_value)], dim=0)
 
         spec = feature.T
+
         for label in labels:
-            tensor = labels[label]
+            tensor = labels[label][
+                mapping.label.onset_frame : mapping.label.offset_frame
+            ]
             if tensor.shape[0] < self.num_frames:
                 pad = torch.zeros(
                     self.num_frames - tensor.shape[0],

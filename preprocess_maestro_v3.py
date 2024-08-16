@@ -10,7 +10,7 @@ import torchaudio
 import tqdm
 from pydantic import RootModel
 
-from preprocess.midi import LABELS, create_label, create_note
+from preprocess.midi import create_label, create_note
 from training.config import DatasetConfig
 from training.dataset import DatasetItem, FrameInfomation, Metadata
 from utils.logger import get_logger
@@ -31,11 +31,9 @@ def process_metadata(
     for m in tqdm.tqdm(metadata, desc=f"CreateLabel {idx}", position=idx):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
 
-        all_exists = all(
-            os.path.exists(os.path.join(label_dir, f"{basename}.{label}.json"))
-            for label in LABELS
-        )
-        if all_exists and not force_reprocess:
+        label_path = os.path.join(label_dir, f"{basename}.pt")
+
+        if os.path.exists(label_path) and not force_reprocess:
             continue
 
         notes = create_note(
@@ -47,9 +45,9 @@ def process_metadata(
 
         labels = create_label(config.feature, config.midi, notes)
 
-        for label, data in labels.items():
-            with open(os.path.join(label_dir, f"{basename}.{label}.json"), "w") as f:
-                json.dump(data, f)
+        labels = {k: torch.tensor(v) for k, v in labels.items()}
+
+        torch.save(labels, label_path)
 
     mel_transform = torchaudio.transforms.MelSpectrogram(
         sample_rate=config.feature.sampling_rate,
@@ -95,13 +93,9 @@ def mapping_dataset(
         feature = torch.load(
             os.path.join(dataset_path, "features", f"{basename}.pt"), weights_only=True
         )
-        labels = {}
-        for label in LABELS:
-            with open(
-                os.path.join(dataset_path, "labels", f"{basename}.{label}.json"), "r"
-            ) as f:
-                arr = json.load(f)
-                labels[label] = torch.tensor(arr)
+        labels = torch.load(
+            os.path.join(dataset_path, "labels", f"{basename}.pt"), weights_only=True
+        )
 
         num_frames = feature.shape[0]
         label_num_frames = labels["mpe"].shape[0]
@@ -162,7 +156,7 @@ def main(
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
 
-    metadata = [m for m in metadata if m.split == "train"]
+    metadata = [m for m in metadata if m.split == "train" and m.year == 2015]
 
     metadata_path = os.path.join(dest_path, "metadata.json")
     label_dir = os.path.join(dest_path, "labels")
