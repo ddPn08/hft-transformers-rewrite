@@ -26,7 +26,6 @@ class MyProgressBar(TQDMProgressBar):
 
 
 def main(
-    dataset_config: str = "./dataset.json",
     dataset_dir: str = "./maestro-v3.0.0-preprocessed",
     output_dir: str = "./output",
     accelerator: str = "gpu",
@@ -39,7 +38,7 @@ def main(
     logger_name: str = "training",
     logger_project: str = "hft-transformer",
 ):
-    with open(dataset_config, "r") as f:
+    with open(os.path.join(dataset_dir, "config.json"), "r") as f:
         config: DatasetConfig = DatasetConfig.model_validate_json(f.read())
 
     dataset = Dataset(dir=dataset_dir)

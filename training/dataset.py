@@ -51,8 +51,8 @@ class Dataset(data.Dataset):
     def __getitem__(self, idx: int):
         mapping = self.datamapping[idx]
 
-        feature_path = os.path.join(self.features_dir, mapping.basename + ".pt")
-        label_path = os.path.join(self.labels_dir, mapping.basename + ".pt")
+        feature_path = os.path.join(self.features_dir, mapping.split, mapping.basename + ".pt")
+        label_path = os.path.join(self.labels_dir, mapping.split, mapping.basename + ".pt")
 
         feature: torch.Tensor = torch.load(
             feature_path, map_location="cpu", weights_only=True
