@@ -157,8 +157,7 @@ def main(
     dataset_path: str = "maestro-v3.0.0",
     dest_path: str = "maestro-v3.0.0-preprocessed",
     num_workers: int = 4,
-    num_gpu_workers: int = 1,
-    device: str = "cuda",
+    devices: str = "cuda:0",
     force_reprocess: bool = False,
     max_value: float = 0.0,
 ):
@@ -176,8 +175,6 @@ def main(
         for key in keys:
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
-
-    metadata = [m for m in metadata if m.year == 2009]
 
     label_dir = os.path.join(dest_path, "labels")
     features_dir = os.path.join(dest_path, "features")
@@ -211,12 +208,13 @@ def main(
         p.join()
 
     processes = []
-    for idx in range(num_gpu_workers):
+    devices = devices.split(",")
+    for idx, device in enumerate(devices):
         p = mp.Process(
             target=process_melspec,
             args=(
                 idx,
-                metadata[idx::num_gpu_workers],
+                metadata[idx::len(devices)],
                 dataset_path,
                 config,
                 features_dir,

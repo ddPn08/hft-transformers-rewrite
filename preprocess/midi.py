@@ -49,8 +49,8 @@ class NoteState(BaseModel):
 class Note(BaseModel):
     onset: float
     offset: float
-    onpedal: float = 0.0
-    offpedal: float = 0.0
+    onpedal: float
+    offpedal: float
     pitch: int
     velocity: int
     reonset: bool
@@ -104,25 +104,31 @@ def create_note(
                     continue
                 state.onpedal = event.time
         elif isinstance(event, PedalOff):
+            sustain = False
             for state in note_states.values():
                 if state is None:
                     continue
-                if state.offset > 0 and state.onpedal > 0:
+                if (
+                    state.offset > 0
+                    and state.offset < event.time
+                    and state.onpedal > 0
+                    and state.onpedal < event.time
+                ):
                     state.offpedal = event.time
                     notes.append(Note.from_state(state))
                     note_states[state.pitch] = None
-
-            sustain = False
         elif isinstance(event, NoteOn):
             state = note_states[event.pitch] if event.pitch in note_states else None
             reonset = False
-            if state is not None and state.onpedal > 0:
+            if state is not None and state.onpedal > 0 and state.onpedal < event.time:
                 state.offset = event.time
+                state.offpedal = event.time
                 notes.append(Note.from_state(state))
                 reonset = True
 
             state = NoteState(
                 onset=event.time,
+                onpedal=event.time,
                 pitch=event.pitch,
                 velocity=event.velocity,
                 sustain=sustain,
@@ -136,12 +142,14 @@ def create_note(
                 logger.warning(f"NoteOff event without NoteOn: {event}")
                 continue
 
-            if state.onpedal > 0:
+            if state.onpedal > 0 and state.onpedal < event.time:
                 state.offset = event.time
                 state.offpedal = event.time
                 continue
 
             state.offset = event.time
+            state.offpedal = event.time
+
             notes.append(Note.from_state(state))
             note_states[event.pitch] = None
 
