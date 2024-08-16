@@ -254,3 +254,213 @@ def create_label(
         "mpe": a_mpe.tolist(),
         "velocity": a_velocity.tolist(),
     }
+
+
+def convert_label_to_note(
+    feature_config: FeatureConfig,
+    midi_config: MidiConfig,
+    onset: np.ndarray,
+    offset: np.ndarray,
+    mpe: np.ndarray,
+    velocity: np.ndarray,
+    thred_onset=0.5,
+    thred_offset=0.5,
+    thred_mpe=0.5,
+    mode_velocity="ignore_zero",
+    mode_offset="shorter",
+):
+    notes: List[Note] = []
+    hop_sec = float(feature_config.hop_sample / feature_config.sampling_rate)
+
+    for j in range(midi_config.num_notes):
+        # find local maximum
+        a_onset_detect = []
+        for i in range(len(onset)):
+            if onset[i][j] >= thred_onset:
+                left_flag = True
+                for ii in range(i - 1, -1, -1):
+                    if onset[i][j] > onset[ii][j]:
+                        left_flag = True
+                        break
+                    elif onset[i][j] < onset[ii][j]:
+                        left_flag = False
+                        break
+                right_flag = True
+                for ii in range(i + 1, len(onset)):
+                    if onset[i][j] > onset[ii][j]:
+                        right_flag = True
+                        break
+                    elif onset[i][j] < onset[ii][j]:
+                        right_flag = False
+                        break
+
+                if (left_flag is True) and (right_flag is True):
+                    if (i == 0) or (i == len(onset) - 1):
+                        onset_time = i * hop_sec
+                    else:
+                        if onset[i - 1][j] == onset[i + 1][j]:
+                            onset_time = i * hop_sec
+                        elif onset[i - 1][j] > onset[i + 1][j]:
+                            onset_time = i * hop_sec - (
+                                hop_sec
+                                * 0.5
+                                * (onset[i - 1][j] - onset[i + 1][j])
+                                / (onset[i][j] - onset[i + 1][j])
+                            )
+                        else:
+                            onset_time = i * hop_sec + (
+                                hop_sec
+                                * 0.5
+                                * (onset[i + 1][j] - onset[i - 1][j])
+                                / (onset[i][j] - onset[i - 1][j])
+                            )
+                    a_onset_detect.append({"loc": i, "onset_time": onset_time})
+        a_offset_detect = []
+        for i in range(len(offset)):
+            if offset[i][j] >= thred_offset:
+                left_flag = True
+                for ii in range(i - 1, -1, -1):
+                    if offset[i][j] > offset[ii][j]:
+                        left_flag = True
+                        break
+                    elif offset[i][j] < offset[ii][j]:
+                        left_flag = False
+                        break
+                right_flag = True
+                for ii in range(i + 1, len(offset)):
+                    if offset[i][j] > offset[ii][j]:
+                        right_flag = True
+                        break
+                    elif offset[i][j] < offset[ii][j]:
+                        right_flag = False
+                        break
+                if (left_flag is True) and (right_flag is True):
+                    if (i == 0) or (i == len(offset) - 1):
+                        offset_time = i * hop_sec
+                    else:
+                        if offset[i - 1][j] == offset[i + 1][j]:
+                            offset_time = i * hop_sec
+                        elif offset[i - 1][j] > offset[i + 1][j]:
+                            offset_time = i * hop_sec - (
+                                hop_sec
+                                * 0.5
+                                * (offset[i - 1][j] - offset[i + 1][j])
+                                / (offset[i][j] - offset[i + 1][j])
+                            )
+                        else:
+                            offset_time = i * hop_sec + (
+                                hop_sec
+                                * 0.5
+                                * (offset[i + 1][j] - offset[i - 1][j])
+                                / (offset[i][j] - offset[i - 1][j])
+                            )
+                    a_offset_detect.append({"loc": i, "offset_time": offset_time})
+
+        time_next = 0.0
+        time_offset = 0.0
+        time_mpe = 0.0
+        for idx_on in range(len(a_onset_detect)):
+            # onset
+            loc_onset = a_onset_detect[idx_on]["loc"]
+            time_onset = a_onset_detect[idx_on]["onset_time"]
+
+            if idx_on + 1 < len(a_onset_detect):
+                loc_next = a_onset_detect[idx_on + 1]["loc"]
+                # time_next = loc_next * hop_sec
+                time_next = a_onset_detect[idx_on + 1]["onset_time"]
+            else:
+                loc_next = len(mpe)
+                time_next = (loc_next - 1) * hop_sec
+
+            # offset
+            loc_offset = loc_onset + 1
+            flag_offset = False
+            # time_offset = 0###
+            for idx_off in range(len(a_offset_detect)):
+                if loc_onset < a_offset_detect[idx_off]["loc"]:
+                    loc_offset = a_offset_detect[idx_off]["loc"]
+                    time_offset = a_offset_detect[idx_off]["offset_time"]
+                    flag_offset = True
+                    break
+            if loc_offset > loc_next:
+                loc_offset = loc_next
+                time_offset = time_next
+
+            # offset by MPE
+            # (1frame longer)
+            loc_mpe = loc_onset + 1
+            flag_mpe = False
+            # time_mpe = 0###
+            for ii_mpe in range(loc_onset + 1, loc_next):
+                if mpe[ii_mpe][j] < thred_mpe:
+                    loc_mpe = ii_mpe
+                    flag_mpe = True
+                    time_mpe = loc_mpe * hop_sec
+                    break
+            """
+            # (right algorighm)
+            loc_mpe = loc_onset
+            flag_mpe = False
+            for ii_mpe in range(loc_onset+1, loc_next+1):
+                if a_mpe[ii_mpe][j] < thred_mpe:
+                    loc_mpe = ii_mpe-1
+                    flag_mpe = True
+                    time_mpe = loc_mpe * hop_sec
+                    break
+            """
+            pitch_value = int(j + midi_config.pitch_min)
+            velocity_value = int(velocity[loc_onset][j])
+
+            if (flag_offset is False) and (flag_mpe is False):
+                offset_value = float(time_next)
+            elif (flag_offset is True) and (flag_mpe is False):
+                offset_value = float(time_offset)
+            elif (flag_offset is False) and (flag_mpe is True):
+                offset_value = float(time_mpe)
+            else:
+                if mode_offset == "offset":
+                    ## (a) offset
+                    offset_value = float(time_offset)
+                elif mode_offset == "longer":
+                    ## (b) longer
+                    if loc_offset >= loc_mpe:
+                        offset_value = float(time_offset)
+                    else:
+                        offset_value = float(time_mpe)
+                else:
+                    ## (c) shorter
+                    if loc_offset <= loc_mpe:
+                        offset_value = float(time_offset)
+                    else:
+                        offset_value = float(time_mpe)
+            if mode_velocity != "ignore_zero":
+                notes.append(
+                    Note(
+                        onset=float(time_onset),
+                        offset=offset_value,
+                        pitch=pitch_value,
+                        velocity=velocity_value,
+                        reonset=False,
+                    )
+                )
+            else:
+                if velocity_value > 0:
+                    notes.append(
+                        Note(
+                            onset=float(time_onset),
+                            offset=offset_value,
+                            pitch=pitch_value,
+                            velocity=velocity_value,
+                            reonset=False,
+                        )
+                    )
+
+            if (
+                (len(notes) > 1)
+                and (notes[len(notes) - 1].pitch == notes[len(notes) - 2].pitch)
+                and (notes[len(notes) - 1].onset < notes[len(notes) - 2].offset)
+            ):
+                notes[len(notes) - 2].offset = notes[len(notes) - 1].onset
+
+    notes = sorted(sorted(notes, key=lambda x: x.pitch), key=lambda x: x.onset)
+    return notes

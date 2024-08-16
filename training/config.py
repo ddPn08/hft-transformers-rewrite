@@ -1,6 +1,8 @@
 from typing import Optional
 from pydantic import BaseModel
 
+from modules.transcriber import TranscriberConfig
+
 
 class FeatureConfig(BaseModel):
     sampling_rate: int = 16000
@@ -30,6 +32,12 @@ class InputConfig(BaseModel):
 
 
 class DatasetConfig(BaseModel):
+    feature: FeatureConfig
+    input: InputConfig
+    midi: MidiConfig
+
+class ModelConfig(BaseModel):
+    params: TranscriberConfig
     feature: FeatureConfig
     input: InputConfig
     midi: MidiConfig

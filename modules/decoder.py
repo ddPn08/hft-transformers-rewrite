@@ -81,7 +81,6 @@ class Decoder(nn.Module):
         self.n_velocity = n_velocity
         self.hid_dim = hid_dim
 
-        self.sigmoid = nn.Sigmoid()
         self.dropout = nn.Dropout(dropout)
 
         self.pos_embedding_freq = nn.Embedding(n_note, hid_dim)
@@ -128,18 +127,14 @@ class Decoder(nn.Module):
             [batch_size, self.n_frame, dim[1], dim[2], dim[3]]
         )
 
-        output_onset_freq = self.sigmoid(
-            self.fc_onset_freq(midi_freq).reshape(
-                [batch_size, self.n_frame, self.n_note]
-            )
+        output_onset_freq = self.fc_onset_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
         )
-        output_offset_freq = self.sigmoid(
-            self.fc_offset_freq(midi_freq).reshape(
-                [batch_size, self.n_frame, self.n_note]
-            )
+        output_offset_freq = self.fc_offset_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
         )
-        output_mpe_freq = self.sigmoid(
-            self.fc_mpe_freq(midi_freq).reshape([batch_size, self.n_frame, self.n_note])
+        output_mpe_freq = self.fc_mpe_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
         )
         output_velocity_freq = self.fc_velocity_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note, self.n_velocity]
@@ -165,19 +160,19 @@ class Decoder(nn.Module):
         for layer_time in self.layers_time:
             midi_time = layer_time(midi_time)
 
-        output_onset_time = self.sigmoid(
+        output_onset_time = (
             self.fc_onset_time(midi_time)
             .reshape([batch_size, self.n_note, self.n_frame])
             .permute(0, 2, 1)
             .contiguous()
         )
-        output_offset_time = self.sigmoid(
+        output_offset_time = (
             self.fc_offset_time(midi_time)
             .reshape([batch_size, self.n_note, self.n_frame])
             .permute(0, 2, 1)
             .contiguous()
         )
-        output_mpe_time = self.sigmoid(
+        output_mpe_time = (
             self.fc_mpe_time(midi_time)
             .reshape([batch_size, self.n_note, self.n_frame])
             .permute(0, 2, 1)

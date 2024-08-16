@@ -1,5 +1,5 @@
 import os
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 import torch
 import torch.utils.data as data
@@ -24,6 +24,7 @@ class FrameInfomation(BaseModel):
 
 
 class DatasetItem(BaseModel):
+    split: Literal['train', 'validation', 'test']
     basename: str
     feature: FrameInfomation
     label: FrameInfomation
@@ -33,11 +34,13 @@ class Dataset(data.Dataset):
     def __init__(
         self,
         dir: str,
+        split: str = "train",
         num_frames: int = 128,
     ):
         datamapping_path = os.path.join(dir, "mapping.json")
         with open(datamapping_path, "r") as f:
             self.datamapping = TypeAdapter(List[DatasetItem]).validate_json(f.read())
+            self.datamapping = [item for item in self.datamapping if item.split == split]
         config_path = os.path.join(dir, "config.json")
         with open(config_path, "r") as f:
             self.config = DatasetConfig.model_validate_json(f.read())

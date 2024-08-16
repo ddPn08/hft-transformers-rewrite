@@ -4,19 +4,22 @@ import fire
 import numpy as np
 import torch
 import torch.utils.data as data
+from lightning.fabric.plugins.precision.precision import _PRECISION_INPUT
 from lightning.pytorch import Trainer
 from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
 
 from modules.transcriber import Transcriber, TranscriberConfig
-from training.config import DatasetConfig
+from training.config import DatasetConfig, ModelConfig
 from training.dataset import Dataset
 from training.module import TranscriberModule
+
+torch.set_float32_matmul_precision("medium")
 
 
 class MyProgressBar(TQDMProgressBar):
     def get_metrics(self, trainer, pl_module):
         items = super().get_metrics(trainer, pl_module)
-        items['loss'] = pl_module.all_loss[-1] if pl_module.all_loss else float("nan")
+        items["loss"] = pl_module.all_loss[-1] if pl_module.all_loss else float("nan")
         items["all_loss_mean"] = np.mean(pl_module.all_loss or float("nan"))
         items["epoch_loss_mean"] = np.mean(pl_module.epoch_loss or float("nan"))
         return items
@@ -29,6 +32,7 @@ def main(
     accelerator: str = "gpu",
     devices: str = "0,",
     max_train_epochs: int = 100,
+    precision: _PRECISION_INPUT = 32,
     batch_size: int = 1,
     num_workers: int = 1,
     logger: str = "none",
@@ -61,11 +65,20 @@ def main(
         n_velocity=config.midi.num_velocity,
         n_note=config.midi.num_notes,
     )
+    model_config = ModelConfig(
+        params=params,
+        feature=config.feature,
+        input=config.input,
+        midi=config.midi,
+    )
     transcriber = Transcriber(params)
     module = TranscriberModule(transcriber, torch.optim.Adam)
 
     checkpoint_dir = os.path.join(output_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)
+
+    with open(os.path.join(output_dir, "config.json"), "w") as f:
+        f.write(model_config.model_dump_json(indent=4))
 
     if logger == "wandb":
         from pytorch_lightning.loggers import WandbLogger
@@ -89,7 +102,7 @@ def main(
         max_epochs=max_train_epochs,
         log_every_n_steps=1,
         callbacks=callbacks,
-        precision="bf16",
+        precision=precision,
     )
     trainer.fit(module, dataloader)
 

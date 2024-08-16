@@ -31,7 +31,8 @@ def process_metadata(
     for m in tqdm.tqdm(metadata, desc=f"CreateLabel {idx}", position=idx):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
 
-        label_path = os.path.join(label_dir, f"{basename}.pt")
+        label_path = os.path.join(label_dir, m.split, f"{basename}.pt")
+        os.makedirs(os.path.dirname(label_path), exist_ok=True)
 
         if os.path.exists(label_path) and not force_reprocess:
             continue
@@ -61,10 +62,12 @@ def process_metadata(
 
     for m in tqdm.tqdm(metadata, desc=f"CreateLogMelSpec {idx}", position=idx):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
-        log_melspec_path = os.path.join(features_dir, f"{basename}.pt")
+        log_melspec_path = os.path.join(features_dir, m.split, f"{basename}.pt")
 
         if os.path.exists(log_melspec_path) and not force_reprocess:
             continue
+
+        os.makedirs(os.path.dirname(log_melspec_path), exist_ok=True)
 
         wav, sr = torchaudio.load(os.path.join(dataset_path, m.audio_filename))
         if device is not None:
@@ -91,10 +94,10 @@ def mapping_dataset(
     for m in tqdm.tqdm(metadata):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
         feature = torch.load(
-            os.path.join(dataset_path, "features", f"{basename}.pt"), weights_only=True
+            os.path.join(dataset_path, "features", m.split, f"{basename}.pt"), weights_only=True
         )
         labels = torch.load(
-            os.path.join(dataset_path, "labels", f"{basename}.pt"), weights_only=True
+            os.path.join(dataset_path, "labels", m.split, f"{basename}.pt"), weights_only=True
         )
 
         num_frames = feature.shape[0]
@@ -120,6 +123,7 @@ def mapping_dataset(
             dataset.append(
                 DatasetItem(
                     basename=basename,
+                    split=m.split,
                     feature=FrameInfomation(
                         onset_frame=spec_start_frame, offset_frame=spec_end_frame
                     ),
@@ -156,16 +160,12 @@ def main(
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
 
-    metadata = [m for m in metadata if m.split == "train" and m.year == 2015]
+    metadata = [m for m in metadata]
 
-    metadata_path = os.path.join(dest_path, "metadata.json")
     label_dir = os.path.join(dest_path, "labels")
     features_dir = os.path.join(dest_path, "features")
     os.makedirs(label_dir, exist_ok=True)
     os.makedirs(features_dir, exist_ok=True)
-
-    with open(metadata_path, "w") as f:
-        f.write(RootModel(metadata).model_dump_json())
 
     config.input.max_value = max_value
 
