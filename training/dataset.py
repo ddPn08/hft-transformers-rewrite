@@ -47,6 +47,25 @@ class Dataset(data.Dataset):
         self.labels_dir = os.path.join(dir, "labels")
         self.num_frames = num_frames
 
+        self.features = {}
+        self.labels = {}
+
+        for mapping in self.datamapping:
+            basename = mapping.basename
+            if basename in self.features:
+                continue
+            feature_path = os.path.join(self.features_dir, basename + ".pt")
+            self.features[basename] = torch.load(
+                feature_path, map_location="cpu", weights_only=True
+            )
+            data = {}
+            for label in LABELS:
+                label_path = os.path.join(self.labels_dir, basename + f".{label}.json")
+                with open(label_path, "r") as f:
+                    arr = json.load(f)
+                    data[label] = torch.tensor(arr)
+            self.labels[basename] = data
+
     def __getitem__(self, idx: int):
         mapping = self.datamapping[idx]
         feature_path = os.path.join(self.features_dir, mapping.basename + ".pt")
@@ -85,9 +104,15 @@ class Dataset(data.Dataset):
 
         spec = feature.T
         for label in labels:
-            labels[label] = labels[label][
-                mapping.label.onset_frame : mapping.label.offset_frame
-            ]
+            tensor = labels[label]
+            if tensor.shape[0] < self.num_frames:
+                pad = torch.zeros(
+                    self.num_frames - tensor.shape[0],
+                    tensor.shape[1],
+                    dtype=tensor.dtype,
+                )
+                tensor = torch.cat([tensor, pad], dim=0)
+            labels[label] = tensor
 
         onset = labels["onset"]
         offset = labels["offset"]
