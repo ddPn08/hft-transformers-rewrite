@@ -94,7 +94,10 @@ class Decoder(nn.Module):
 
         self.fc_onset_freq = nn.Linear(hid_dim, 1)
         self.fc_offset_freq = nn.Linear(hid_dim, 1)
+        self.fc_onpedal_freq = nn.Linear(hid_dim, 1)
+        self.fc_offpedal_freq = nn.Linear(hid_dim, 1)
         self.fc_mpe_freq = nn.Linear(hid_dim, 1)
+        self.fc_mpe_pedal_freq = nn.Linear(hid_dim, 1)
         self.fc_velocity_freq = nn.Linear(hid_dim, self.n_velocity)
 
         self.pos_embedding_time = nn.Embedding(n_frame, hid_dim)
@@ -104,7 +107,10 @@ class Decoder(nn.Module):
 
         self.fc_onset_time = nn.Linear(hid_dim, 1)
         self.fc_offset_time = nn.Linear(hid_dim, 1)
+        self.fc_onpedal_time = nn.Linear(hid_dim, 1)
+        self.fc_offpedal_time = nn.Linear(hid_dim, 1)
         self.fc_mpe_time = nn.Linear(hid_dim, 1)
+        self.fc_mpe_pedal_time = nn.Linear(hid_dim, 1)
         self.fc_velocity_time = nn.Linear(hid_dim, self.n_velocity)
 
     def forward(self, spec: torch.Tensor):
@@ -133,7 +139,16 @@ class Decoder(nn.Module):
         output_offset_freq = self.fc_offset_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note]
         )
+        output_onpedal_freq = self.fc_onpedal_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
+        )
+        output_offpedal_freq = self.fc_offpedal_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
+        )
         output_mpe_freq = self.fc_mpe_freq(midi_freq).reshape(
+            [batch_size, self.n_frame, self.n_note]
+        )
+        output_mpe_pedal_freq = self.fc_mpe_pedal_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note]
         )
         output_velocity_freq = self.fc_velocity_freq(midi_freq).reshape(
@@ -172,8 +187,26 @@ class Decoder(nn.Module):
             .permute(0, 2, 1)
             .contiguous()
         )
+        output_onpedal_time = (
+            self.fc_onpedal_time(midi_time)
+            .reshape([batch_size, self.n_note, self.n_frame])
+            .permute(0, 2, 1)
+            .contiguous()
+        )
+        output_offpedal_time = (
+            self.fc_offpedal_time(midi_time)
+            .reshape([batch_size, self.n_note, self.n_frame])
+            .permute(0, 2, 1)
+            .contiguous()
+        )
         output_mpe_time = (
             self.fc_mpe_time(midi_time)
+            .reshape([batch_size, self.n_note, self.n_frame])
+            .permute(0, 2, 1)
+            .contiguous()
+        )
+        output_mpe_pedal_time = (
+            self.fc_mpe_pedal_time(midi_time)
             .reshape([batch_size, self.n_note, self.n_frame])
             .permute(0, 2, 1)
             .contiguous()
@@ -188,11 +221,17 @@ class Decoder(nn.Module):
         return (
             output_onset_freq,
             output_offset_freq,
+            output_onpedal_freq,
+            output_offpedal_freq,
             output_mpe_freq,
+            output_mpe_pedal_freq,
             output_velocity_freq,
             attention_freq,
             output_onset_time,
             output_offset_time,
+            output_onpedal_time,
+            output_offpedal_time,
             output_mpe_time,
+            output_mpe_pedal_time,
             output_velocity_time,
         )

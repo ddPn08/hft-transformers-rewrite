@@ -1,5 +1,6 @@
 import json
 import os
+from concurrent.futures import ProcessPoolExecutor, Future
 from typing import List
 
 import fire
@@ -24,9 +25,7 @@ def process_metadata(
     dataset_path: str,
     config: DatasetConfig,
     label_dir: str,
-    features_dir: str,
     force_reprocess: bool,
-    device: str,
 ):
     for m in tqdm.tqdm(metadata, desc=f"CreateLabel {idx}", position=idx):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
@@ -37,19 +36,34 @@ def process_metadata(
         if os.path.exists(label_path) and not force_reprocess:
             continue
 
-        notes = create_note(
-            os.path.join(dataset_path, m.midi_filename),
-            min_pitch=config.midi.pitch_min,
-            max_pitch=config.midi.pitch_max,
-            apply_pedal=True,
-        )
+        try:
+            notes = create_note(
+                os.path.join(dataset_path, m.midi_filename),
+                min_pitch=config.midi.pitch_min,
+                max_pitch=config.midi.pitch_max,
+                apply_pedal=True,
+            )
 
-        labels = create_label(config.feature, config.midi, notes)
+            labels = create_label(config.feature, config.midi, notes)
 
-        labels = {k: torch.tensor(v) for k, v in labels.items()}
+            labels = {k: torch.tensor(v) for k, v in labels.items()}
 
-        torch.save(labels, label_path)
+            torch.save(labels, label_path)
+        except Exception as e:
+            logger.error(f"Error: {basename}")
+            logger.error(e)
+            raise e
 
+
+def process_melspec(
+    idx: int,
+    metadata: List[Metadata],
+    dataset_path: str,
+    config: DatasetConfig,
+    features_dir: str,
+    force_reprocess: bool,
+    device: str,
+):
     mel_transform = torchaudio.transforms.MelSpectrogram(
         sample_rate=config.feature.sampling_rate,
         n_fft=config.feature.fft_bins,
@@ -94,10 +108,12 @@ def mapping_dataset(
     for m in tqdm.tqdm(metadata):
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
         feature = torch.load(
-            os.path.join(dataset_path, "features", m.split, f"{basename}.pt"), weights_only=True
+            os.path.join(dataset_path, "features", m.split, f"{basename}.pt"),
+            weights_only=True,
         )
         labels = torch.load(
-            os.path.join(dataset_path, "labels", m.split, f"{basename}.pt"), weights_only=True
+            os.path.join(dataset_path, "labels", m.split, f"{basename}.pt"),
+            weights_only=True,
         )
 
         num_frames = feature.shape[0]
@@ -141,6 +157,7 @@ def main(
     dataset_path: str = "maestro-v3.0.0",
     dest_path: str = "maestro-v3.0.0-preprocessed",
     num_workers: int = 4,
+    num_gpu_workers: int = 1,
     device: str = "cuda",
     force_reprocess: bool = False,
     max_value: float = 0.0,
@@ -160,7 +177,7 @@ def main(
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
 
-    metadata = [m for m in metadata]
+    metadata = [m for m in metadata if m.year == 2009]
 
     label_dir = os.path.join(dest_path, "labels")
     features_dir = os.path.join(dest_path, "features")
@@ -173,8 +190,8 @@ def main(
         config.input.min_value = np.log(config.feature.log_offset).astype(np.float32)
     else:
         config.input.min_value = config.feature.log_offset
-
     processes = []
+
     for idx in range(num_workers):
         p = mp.Process(
             target=process_metadata,
@@ -184,6 +201,24 @@ def main(
                 dataset_path,
                 config,
                 label_dir,
+                force_reprocess,
+            ),
+        )
+        p.start()
+        processes.append(p)
+    
+    for p in processes:
+        p.join()
+
+    processes = []
+    for idx in range(num_gpu_workers):
+        p = mp.Process(
+            target=process_melspec,
+            args=(
+                idx,
+                metadata[idx::num_gpu_workers],
+                dataset_path,
+                config,
                 features_dir,
                 force_reprocess,
                 device,

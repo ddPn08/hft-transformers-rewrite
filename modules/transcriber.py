@@ -22,9 +22,7 @@ class TranscriberConfig(BaseModel):
 
 
 class Transcriber(nn.Module):
-    def __init__(
-        self, params: TranscriberConfig
-    ):
+    def __init__(self, params: TranscriberConfig):
         super().__init__()
         self.encoder = Encoder(
             n_frame=params.n_frame,
@@ -52,26 +50,4 @@ class Transcriber(nn.Module):
 
     def forward(self, spec: torch.Tensor):
         enc_vector = self.encoder(spec)
-        (
-            output_onset_A,
-            output_offset_A,
-            output_mpe_A,
-            output_velocity_A,
-            attention,
-            output_onset_B,
-            output_offset_B,
-            output_mpe_B,
-            output_velocity_B,
-        ) = self.decoder(enc_vector)
-
-        return (
-            output_onset_A,
-            output_offset_A,
-            output_mpe_A,
-            output_velocity_A,
-            attention,
-            output_onset_B,
-            output_offset_B,
-            output_mpe_B,
-            output_velocity_B,
-        )
+        return self.decoder(enc_vector)

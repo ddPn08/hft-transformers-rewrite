@@ -101,19 +101,25 @@ class Dataset(data.Dataset):
 
         onset = labels["onset"]
         offset = labels["offset"]
+        onpedal = labels["onpedal"]
+        offpedal = labels["offpedal"]
         mpe = labels["mpe"].float()
+        mpe_pedal = labels["mpe_pedal"].float()
         velocity = labels["velocity"].long()
 
-        return spec, onset, offset, mpe, velocity
+        return spec, onset, offset, onpedal, offpedal, mpe, mpe_pedal, velocity
 
     def __len__(self):
         return len(self.datamapping)
 
     def collate_fn(self, batch):
-        specs, onsets, offsets, mpes, velocities = zip(*batch)
+        specs, onsets, offsets, onpedals, offpedals, mpes, mpes_pedal, velocities = zip(*batch)
         specs = torch.stack(specs)
         onsets = torch.stack(onsets)
         offsets = torch.stack(offsets)
+        onpedals = torch.stack(onpedals)
+        offpedals = torch.stack(offpedals)
         mpes = torch.stack(mpes)
+        mpes_pedal = torch.stack(mpes_pedal)
         velocities = torch.stack(velocities)
-        return specs, onsets, offsets, mpes, velocities
+        return specs, onsets, offsets, onpedals, offpedals, mpes, mpes_pedal, velocities

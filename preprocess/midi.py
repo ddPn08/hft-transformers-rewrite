@@ -37,18 +37,20 @@ class NoteOff(BaseModel):
 
 
 class NoteState(BaseModel):
-    onset: float = 0
-    offset: float = 0
+    onset: float = -1.0
+    offset: float = -1.0
+    onpedal: float = -1.0
+    offpedal: float = -1.0
     pitch: int = 0
     velocity: int = 0
-    on: bool = False
     reonset: bool = False
-    sustain: bool = False
 
 
 class Note(BaseModel):
     onset: float
     offset: float
+    onpedal: float = 0.0
+    offpedal: float = 0.0
     pitch: int
     velocity: int
     reonset: bool
@@ -57,6 +59,8 @@ class Note(BaseModel):
         return Note(
             onset=state.onset,
             offset=state.offset,
+            onpedal=state.onpedal,
+            offpedal=state.offpedal,
             pitch=state.pitch,
             velocity=state.velocity,
             reonset=state.reonset,
@@ -98,47 +102,47 @@ def create_note(
             for state in note_states.values():
                 if state is None:
                     continue
-                state.sustain = True
+                state.onpedal = event.time
         elif isinstance(event, PedalOff):
             for state in note_states.values():
                 if state is None:
                     continue
-                if not state.on and state.sustain:
-                    state.offset = event.time
+                if state.offset > 0 and state.onpedal > 0:
+                    state.offpedal = event.time
                     notes.append(Note.from_state(state))
                     note_states[state.pitch] = None
 
             sustain = False
         elif isinstance(event, NoteOn):
-            note = note_states[event.pitch] if event.pitch in note_states else None
+            state = note_states[event.pitch] if event.pitch in note_states else None
             reonset = False
-            if note is not None and note.sustain:
-                note.offset = event.time
-                notes.append(Note.from_state(note))
+            if state is not None and state.onpedal > 0:
+                state.offset = event.time
+                notes.append(Note.from_state(state))
                 reonset = True
 
-            note = NoteState(
+            state = NoteState(
                 onset=event.time,
                 pitch=event.pitch,
                 velocity=event.velocity,
                 sustain=sustain,
                 reonset=reonset,
-                on=True,
             )
-            note_states[event.pitch] = note
+            note_states[event.pitch] = state
 
         elif isinstance(event, NoteOff):
-            note = note_states[event.pitch] if event.pitch in note_states else None
-            if note is None:
+            state = note_states[event.pitch] if event.pitch in note_states else None
+            if state is None:
                 logger.warning(f"NoteOff event without NoteOn: {event}")
                 continue
 
-            if note.sustain:
-                note.on = False
+            if state.onpedal > 0:
+                state.offset = event.time
+                state.offpedal = event.time
                 continue
 
-            note.offset = event.time
-            notes.append(Note.from_state(note))
+            state.offset = event.time
+            notes.append(Note.from_state(state))
             note_states[event.pitch] = None
 
     notes = sorted(sorted(notes, key=lambda x: x.pitch), key=lambda x: x.onset)
@@ -158,13 +162,16 @@ def create_label(
 
     num_frame_in_sec = feature_config.sampling_rate / feature_config.hop_sample
 
-    max_offset = max([note.offset for note in notes])
+    max_offset = max([note.offpedal for note in notes])
 
     num_frame = int(max_offset * num_frame_in_sec + 0.5) + 1
 
-    a_mpe = np.zeros((num_frame, midi_config.num_notes), dtype=np.bool)
+    a_mpe = np.zeros((num_frame, midi_config.num_notes), dtype=np.bool_)
+    a_mpe_pedal = np.zeros((num_frame, midi_config.num_notes), dtype=np.bool_)
     a_onset = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
     a_offset = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
+    a_onpedal = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
+    a_offpedal = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
     a_velocity = np.zeros((num_frame, midi_config.num_notes), dtype=np.int8)
 
     for note in notes:
@@ -178,9 +185,22 @@ def create_label(
         offset_ms = note.offset * 1000.0
         offset_sharpness = offset_tolerance
 
+        onpedal_frame = int(note.onpedal * num_frame_in_sec + 0.5)
+        onpedal_ms = note.onpedal * 1000.0
+        onpedal_sharpness = onset_tolerance
+
+        offpedal_frame = int(note.offpedal * num_frame_in_sec + 0.5)
+        offpedal_ms = note.offpedal * 1000.0
+        offpedal_sharpness = offset_tolerance
+
         if offset_duration_tolerance_flag:
             offset_duration_tolerance = int((offset_ms - onset_ms) * 0.2 / hop_ms + 0.5)
             offset_sharpness = max(offset_tolerance, offset_duration_tolerance)
+
+            offpedal_duration_tolerance = int(
+                (offpedal_ms - onpedal_ms) * 0.2 / hop_ms + 0.5
+            )
+            offpedal_sharpness = max(offset_tolerance, offpedal_duration_tolerance)
 
         velocity = note.velocity
 
@@ -212,17 +232,13 @@ def create_label(
                 ):
                     a_velocity[onset_frame - j][pitch] = velocity
 
-        # mpe
-        for j in range(onset_frame, offset_frame + 1):
-            a_mpe[j][pitch] = 1
-
         # offset
         offset_flag = True
         for j in range(len(notes)):
             note_2 = notes[j]
             if note.pitch != note_2.pitch:
                 continue
-            if note.offset == note_2.offset:
+            if note.offset == note_2.onset:
                 offset_flag = False
                 break
 
@@ -248,10 +264,74 @@ def create_label(
                         a_offset[offset_frame - j][pitch], offset_val
                     )
 
+        # onpedal
+        for j in range(0, onpedal_sharpness + 1):
+            onpedal_ms_q = (onpedal_frame + j) * hop_ms
+            onpedal_ms_diff = onpedal_ms_q - onpedal_ms
+            onpedal_val = max(
+                0.0, 1.0 - (abs(onpedal_ms_diff) / (onpedal_sharpness * hop_ms))
+            )
+            if onpedal_frame + j < num_frame:
+                a_onpedal[onpedal_frame + j][pitch] = max(
+                    a_onpedal[onpedal_frame + j][pitch], onpedal_val
+                )
+
+        for j in range(1, onpedal_sharpness + 1):
+            onpedal_ms_q = (onpedal_frame - j) * hop_ms
+            onpedal_ms_diff = onpedal_ms_q - onpedal_ms
+            onpedal_val = max(
+                0.0, 1.0 - (abs(onpedal_ms_diff) / (onpedal_sharpness * hop_ms))
+            )
+            if onpedal_frame - j >= 0:
+                a_onpedal[onpedal_frame - j][pitch] = max(
+                    a_onpedal[onpedal_frame - j][pitch], onpedal_val
+                )
+
+        # offpedal
+        offpedal_flag = True
+        for j in range(len(notes)):
+            note_2 = notes[j]
+            if note.pitch != note_2.pitch:
+                continue
+            if note.offpedal == note_2.onset:
+                offpedal_flag = False
+                break
+
+        if offpedal_flag is True:
+            for j in range(0, offpedal_sharpness + 1):
+                offpedal_ms_q = (offpedal_frame + j) * hop_ms
+                offpedal_ms_diff = offpedal_ms_q - offpedal_ms
+                offpedal_val = max(
+                    0.0, 1.0 - (abs(offpedal_ms_diff) / (offpedal_sharpness * hop_ms))
+                )
+                if offpedal_frame + j < num_frame:
+                    a_offpedal[offpedal_frame + j][pitch] = max(
+                        a_offpedal[offpedal_frame + j][pitch], offpedal_val
+                    )
+            for j in range(1, offpedal_sharpness + 1):
+                offpedal_ms_q = (offpedal_frame - j) * hop_ms
+                offpedal_ms_diff = offpedal_ms_q - offpedal_ms
+                offpedal_val = max(
+                    0.0, 1.0 - (abs(offpedal_ms_diff) / (offpedal_sharpness * hop_ms))
+                )
+                if offpedal_frame - j >= 0:
+                    a_offpedal[offpedal_frame - j][pitch] = max(
+                        a_offpedal[offpedal_frame - j][pitch], offpedal_val
+                    )
+
+        # mpe
+        a_mpe[onset_frame : offset_frame + 1, pitch] = 1
+
+        # pedal mpe
+        a_mpe_pedal[onpedal_frame : offpedal_frame + 1, pitch] = 1
+
     return {
+        "mpe": a_mpe.tolist(),
+        "mpe_pedal": a_mpe_pedal.tolist(),
         "onset": a_onset.tolist(),
         "offset": a_offset.tolist(),
-        "mpe": a_mpe.tolist(),
+        "onpedal": a_onpedal.tolist(),
+        "offpedal": a_offpedal.tolist(),
         "velocity": a_velocity.tolist(),
     }
 
