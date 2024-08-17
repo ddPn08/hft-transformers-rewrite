@@ -22,6 +22,7 @@ def main(
     thred_offpedal: float = 0.5,
     thred_mpe: float = 0.5,
     thred_mpe_pedal: float = 0.5,
+    num_strides: int = -1,
 ):
     device = torch.device(device)
     with open(config_path, "r") as f:
@@ -53,26 +54,51 @@ def main(
     melspec = mel_transform(wav)
     feature = (torch.log(melspec + config.feature.log_offset)).T
 
-    # a_tmp_b = np.full([self.config['input']['margin_b'], self.config['feature']['n_bins']], self.config['input']['min_value'], dtype=np.float32)
-    # len_s = int(np.ceil(a_feature.shape[0] / self.config['input']['num_frame']) * self.config['input']['num_frame']) - a_feature.shape[0]
-    # a_tmp_f = np.full([len_s+self.config['input']['margin_f'], self.config['feature']['n_bins']], self.config['input']['min_value'], dtype=np.float32)
-    # a_input = torch.from_numpy(np.concatenate([a_tmp_b, a_feature, a_tmp_f], axis=0))
-    a_tmp_b = torch.full(
-        [config.input.margin_b, config.feature.n_bins],
-        config.input.min_value,
-        dtype=torch.float32,
-        device=device,
-    )
-    len_s = (
-        int(np.ceil(feature.shape[0] / config.input.num_frame) * config.input.num_frame)
-        - feature.shape[0]
-    )
-    a_tmp_f = torch.full(
-        [len_s + config.input.margin_f, config.feature.n_bins],
-        config.input.min_value,
-        dtype=torch.float32,
-        device=device,
-    )
+    half_frame = int(config.input.num_frame / 2) if num_strides > 0 else None
+
+    if num_strides > 0:
+        a_tmp_b = torch.full(
+            [config.input.margin_b + num_strides, config.feature.n_bins],
+            config.input.min_value,
+            dtype=torch.float32,
+            device=device,
+        )
+        tmp_len = (
+            feature.shape[0]
+            + config.input.margin_b
+            + config.input.margin_f
+            + half_frame
+        )
+        len_s = int(np.ceil(tmp_len / half_frame) * half_frame) - tmp_len
+        a_tmp_f = torch.full(
+            [
+                len_s + config.input.margin_f + (half_frame - num_strides),
+                config.feature.n_bins,
+            ],
+            config.input.min_value,
+            dtype=torch.float32,
+            device=device,
+        )
+    else:
+        a_tmp_b = torch.full(
+            [config.input.margin_b, config.feature.n_bins],
+            config.input.min_value,
+            dtype=torch.float32,
+            device=device,
+        )
+        len_s = (
+            int(
+                np.ceil(feature.shape[0] / config.input.num_frame)
+                * config.input.num_frame
+            )
+            - feature.shape[0]
+        )
+        a_tmp_f = torch.full(
+            [len_s + config.input.margin_f, config.feature.n_bins],
+            config.input.min_value,
+            dtype=torch.float32,
+            device=device,
+        )
     feature_with_margin = torch.cat([a_tmp_b, feature, a_tmp_f], axis=0)
 
     model = Transcriber(config.params).to(device)
@@ -123,7 +149,9 @@ def main(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.int8
     )
 
-    for i in tqdm.tqdm(range(0, feature.shape[0], config.input.num_frame)):
+    for i in tqdm.tqdm(
+        range(0, feature.shape[0], half_frame or config.input.num_frame)
+    ):
         input = (
             (
                 feature_with_margin[
@@ -167,49 +195,138 @@ def main(
             output_mpe_B = torch.sigmoid(output_mpe_B)
             output_mpe_pedal_B = torch.sigmoid(output_mpe_pedal_B)
 
-        output_onset_A_all[i : i + config.input.num_frame] = (
-            output_onset_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_offset_A_all[i : i + config.input.num_frame] = (
-            output_offset_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_onpedal_A_all[i : i + config.input.num_frame] = (
-            output_onpedal_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_offpedal_A_all[i : i + config.input.num_frame] = (
-            output_offpedal_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_mpe_A_all[i : i + config.input.num_frame] = (
-            output_mpe_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_mpe_pedal_A_all[i : i + config.input.num_frame] = (
-            output_mpe_pedal_A.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_velocity_A_all[i : i + config.input.num_frame] = (
-            output_velocity_A.squeeze(0).argmax(2).detach().to("cpu").numpy()
-        )
+        if half_frame is not None:
+            output_onset_A_all[i : i + half_frame] = (
+                (output_onset_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_offset_A_all[i : i + half_frame] = (
+                (output_offset_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_onpedal_A_all[i : i + half_frame] = (
+                (output_onpedal_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_offpedal_A_all[i : i + half_frame] = (
+                (output_offpedal_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_mpe_A_all[i : i + half_frame] = (
+                (output_mpe_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_mpe_pedal_A_all[i : i + half_frame] = (
+                (output_mpe_pedal_A.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_velocity_A_all[i : i + half_frame] = (
+                output_velocity_A.squeeze(0)
+                .argmax(2)[num_strides : num_strides + half_frame]
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
 
-        output_onset_B_all[i : i + config.input.num_frame] = (
-            output_onset_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_offset_B_all[i : i + config.input.num_frame] = (
-            output_offset_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_onpedal_B_all[i : i + config.input.num_frame] = (
-            output_onpedal_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_offpedal_B_all[i : i + config.input.num_frame] = (
-            output_offpedal_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_mpe_B_all[i : i + config.input.num_frame] = (
-            output_mpe_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_mpe_pedal_B_all[i : i + config.input.num_frame] = (
-            output_mpe_pedal_B.squeeze(0).detach().to("cpu").numpy()
-        )
-        output_velocity_B_all[i : i + config.input.num_frame] = (
-            output_velocity_B.squeeze(0).argmax(2).detach().to("cpu").numpy()
-        )
+            output_onset_B_all[i : i + half_frame] = (
+                (output_onset_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_offset_B_all[i : i + half_frame] = (
+                (output_offset_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_onpedal_B_all[i : i + half_frame] = (
+                (output_onpedal_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_offpedal_B_all[i : i + half_frame] = (
+                (output_offpedal_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_mpe_B_all[i : i + half_frame] = (
+                (output_mpe_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_mpe_pedal_B_all[i : i + half_frame] = (
+                (output_mpe_pedal_B.squeeze(0)[num_strides : num_strides + half_frame])
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+            output_velocity_B_all[i : i + half_frame] = (
+                output_velocity_B.squeeze(0)
+                .argmax(2)[num_strides : num_strides + half_frame]
+                .detach()
+                .to("cpu")
+                .numpy()
+            )
+        else:
+            output_onset_A_all[i : i + config.input.num_frame] = (
+                output_onset_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_offset_A_all[i : i + config.input.num_frame] = (
+                output_offset_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_onpedal_A_all[i : i + config.input.num_frame] = (
+                output_onpedal_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_offpedal_A_all[i : i + config.input.num_frame] = (
+                output_offpedal_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_mpe_A_all[i : i + config.input.num_frame] = (
+                output_mpe_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_mpe_pedal_A_all[i : i + config.input.num_frame] = (
+                output_mpe_pedal_A.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_velocity_A_all[i : i + config.input.num_frame] = (
+                output_velocity_A.squeeze(0).argmax(2).detach().to("cpu").numpy()
+            )
+
+            output_onset_B_all[i : i + config.input.num_frame] = (
+                output_onset_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_offset_B_all[i : i + config.input.num_frame] = (
+                output_offset_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_onpedal_B_all[i : i + config.input.num_frame] = (
+                output_onpedal_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_offpedal_B_all[i : i + config.input.num_frame] = (
+                output_offpedal_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_mpe_B_all[i : i + config.input.num_frame] = (
+                output_mpe_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_mpe_pedal_B_all[i : i + config.input.num_frame] = (
+                output_mpe_pedal_B.squeeze(0).detach().to("cpu").numpy()
+            )
+            output_velocity_B_all[i : i + config.input.num_frame] = (
+                output_velocity_B.squeeze(0).argmax(2).detach().to("cpu").numpy()
+            )
 
     notes_A, pedals_A = convert_label_to_note(
         config.feature,
@@ -260,14 +377,14 @@ def main(
     midi = pm.PrettyMIDI()
     instrument = pm.Instrument(program=0)
 
-    for pedal in pedals_A:
-        instrument.control_changes.append(
-            pm.ControlChange(number=64, value=127, time=pedal.onset)
-        )
+    # for pedal in pedals_A:
+    #     instrument.control_changes.append(
+    #         pm.ControlChange(number=64, value=127, time=pedal.onset)
+    #     )
 
-        instrument.control_changes.append(
-            pm.ControlChange(number=64, value=0, time=pedal.offset)
-        )
+    #     instrument.control_changes.append(
+    #         pm.ControlChange(number=64, value=0, time=pedal.offset)
+    #     )
 
     for note in notes_A:
         instrument.notes.append(
