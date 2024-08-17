@@ -123,6 +123,9 @@ def create_note(
                 pedal_state.offset = event.time
                 pedals.append(Pedal.from_state(pedal_state))
                 pedal_state = PedalState()
+            elif pedal_state.onset < 0:
+                logger.warning(f"PedalOff event without PedalOn: {event}")
+                pedals[-1].offset = event.time
 
         elif isinstance(event, NoteOn):
             state = note_states[event.pitch] if event.pitch in note_states else None
