@@ -18,7 +18,10 @@ def main(
     config_path: str = "config.json",
     thred_onset: float = 0.5,
     thred_offset: float = 0.5,
+    thred_onpedal: float = 0.5,
+    thred_offpedal: float = 0.5,
     thred_mpe: float = 0.5,
+    thred_mpe_pedal: float = 0.5,
 ):
     device = torch.device(device)
     with open(config_path, "r") as f:
@@ -82,7 +85,16 @@ def main(
     output_offset_A_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
+    output_onpedal_A_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
+    output_offpedal_A_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
     output_mpe_A_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
+    output_mpe_pedal_A_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_velocity_A_all = np.zeros(
@@ -95,7 +107,16 @@ def main(
     output_offset_B_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
+    output_onpedal_B_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
+    output_offpedal_B_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
     output_mpe_B_all = np.zeros(
+        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+    )
+    output_mpe_pedal_B_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_velocity_B_all = np.zeros(
@@ -119,20 +140,32 @@ def main(
             (
                 output_onset_A,
                 output_offset_A,
+                output_onpedal_A,
+                output_offpedal_A,
                 output_mpe_A,
+                output_mpe_pedal_A,
                 output_velocity_A,
                 _,
                 output_onset_B,
                 output_offset_B,
+                output_onpedal_B,
+                output_offpedal_B,
                 output_mpe_B,
+                output_mpe_pedal_B,
                 output_velocity_B,
             ) = model(input)
             output_onset_A = torch.sigmoid(output_onset_A)
             output_offset_A = torch.sigmoid(output_offset_A)
+            output_onpedal_A = torch.sigmoid(output_onpedal_A)
+            output_offpedal_A = torch.sigmoid(output_offpedal_A)
             output_mpe_A = torch.sigmoid(output_mpe_A)
+            output_mpe_pedal_A = torch.sigmoid(output_mpe_pedal_A)
             output_onset_B = torch.sigmoid(output_onset_B)
             output_offset_B = torch.sigmoid(output_offset_B)
+            output_onpedal_B = torch.sigmoid(output_onpedal_B)
+            output_offpedal_B = torch.sigmoid(output_offpedal_B)
             output_mpe_B = torch.sigmoid(output_mpe_B)
+            output_mpe_pedal_B = torch.sigmoid(output_mpe_pedal_B)
 
         output_onset_A_all[i : i + config.input.num_frame] = (
             output_onset_A.squeeze(0).detach().to("cpu").numpy()
@@ -140,8 +173,17 @@ def main(
         output_offset_A_all[i : i + config.input.num_frame] = (
             output_offset_A.squeeze(0).detach().to("cpu").numpy()
         )
+        output_onpedal_A_all[i : i + config.input.num_frame] = (
+            output_onpedal_A.squeeze(0).detach().to("cpu").numpy()
+        )
+        output_offpedal_A_all[i : i + config.input.num_frame] = (
+            output_offpedal_A.squeeze(0).detach().to("cpu").numpy()
+        )
         output_mpe_A_all[i : i + config.input.num_frame] = (
             output_mpe_A.squeeze(0).detach().to("cpu").numpy()
+        )
+        output_mpe_pedal_A_all[i : i + config.input.num_frame] = (
+            output_mpe_pedal_A.squeeze(0).detach().to("cpu").numpy()
         )
         output_velocity_A_all[i : i + config.input.num_frame] = (
             output_velocity_A.squeeze(0).argmax(2).detach().to("cpu").numpy()
@@ -153,45 +195,79 @@ def main(
         output_offset_B_all[i : i + config.input.num_frame] = (
             output_offset_B.squeeze(0).detach().to("cpu").numpy()
         )
+        output_onpedal_B_all[i : i + config.input.num_frame] = (
+            output_onpedal_B.squeeze(0).detach().to("cpu").numpy()
+        )
+        output_offpedal_B_all[i : i + config.input.num_frame] = (
+            output_offpedal_B.squeeze(0).detach().to("cpu").numpy()
+        )
         output_mpe_B_all[i : i + config.input.num_frame] = (
             output_mpe_B.squeeze(0).detach().to("cpu").numpy()
+        )
+        output_mpe_pedal_B_all[i : i + config.input.num_frame] = (
+            output_mpe_pedal_B.squeeze(0).detach().to("cpu").numpy()
         )
         output_velocity_B_all[i : i + config.input.num_frame] = (
             output_velocity_B.squeeze(0).argmax(2).detach().to("cpu").numpy()
         )
 
-    notes_A = convert_label_to_note(
+    notes_A, pedals_A = convert_label_to_note(
         config.feature,
         config.midi,
         output_onset_A_all,
         output_offset_A_all,
+        output_onpedal_A_all,
+        output_offpedal_A_all,
         output_mpe_A_all,
+        output_mpe_pedal_A_all,
         output_velocity_A_all,
         thred_onset=thred_onset,
         thred_offset=thred_offset,
+        thred_onpedal=thred_onpedal,
+        thred_offpedal=thred_offpedal,
         thred_mpe=thred_mpe,
+        thred_mpe_pedal=thred_mpe_pedal,
         mode_velocity="ignore_zero",
         mode_offset="shorter",
     )
 
-    note_B = convert_label_to_note(
+    note_B, pedals_B = convert_label_to_note(
         config.feature,
         config.midi,
         output_onset_B_all,
         output_offset_B_all,
+        output_onpedal_B_all,
+        output_offpedal_B_all,
         output_mpe_B_all,
+        output_mpe_pedal_B_all,
         output_velocity_B_all,
         thred_onset=thred_onset,
         thred_offset=thred_offset,
+        thred_onpedal=thred_onpedal,
+        thred_offpedal=thred_offpedal,
         thred_mpe=thred_mpe,
+        thred_mpe_pedal=thred_mpe_pedal,
         mode_velocity="ignore_zero",
         mode_offset="shorter",
     )
 
     notes_A.extend(note_B)
+    pedals_A.extend(pedals_B)
+
+    if len(notes_A) == 0:
+        raise ValueError("No notes detected.")
 
     midi = pm.PrettyMIDI()
     instrument = pm.Instrument(program=0)
+
+    for pedal in pedals_A:
+        instrument.control_changes.append(
+            pm.ControlChange(number=64, value=127, time=pedal.onset)
+        )
+
+        instrument.control_changes.append(
+            pm.ControlChange(number=64, value=0, time=pedal.offset)
+        )
 
     for note in notes_A:
         instrument.notes.append(
