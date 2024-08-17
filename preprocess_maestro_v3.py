@@ -37,14 +37,14 @@ def process_metadata(
             continue
 
         try:
-            notes = create_note(
+            notes, pedals = create_note(
                 os.path.join(dataset_path, m.midi_filename),
                 min_pitch=config.midi.pitch_min,
                 max_pitch=config.midi.pitch_max,
                 apply_pedal=True,
             )
 
-            labels = create_label(config.feature, config.midi, notes)
+            labels = create_label(config.feature, config.midi, notes, pedals)
 
             labels = {k: torch.tensor(v) for k, v in labels.items()}
 
