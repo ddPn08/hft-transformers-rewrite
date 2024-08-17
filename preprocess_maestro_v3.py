@@ -25,15 +25,16 @@ def process_metadata(
     dataset_path: str,
     config: DatasetConfig,
     label_dir: str,
-    force_reprocess: bool,
+    force_preprocess: bool,
 ):
     for m in tqdm.tqdm(metadata, desc=f"CreateLabel {idx}", position=idx):
+        print(m.midi_filename)
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
 
         label_path = os.path.join(label_dir, m.split, f"{basename}.pt")
         os.makedirs(os.path.dirname(label_path), exist_ok=True)
 
-        if os.path.exists(label_path) and not force_reprocess:
+        if os.path.exists(label_path) and not force_preprocess:
             continue
 
         try:
@@ -61,7 +62,7 @@ def process_melspec(
     dataset_path: str,
     config: DatasetConfig,
     features_dir: str,
-    force_reprocess: bool,
+    force_preprocess: bool,
     device: str,
 ):
     mel_transform = torchaudio.transforms.MelSpectrogram(
@@ -78,7 +79,7 @@ def process_melspec(
         basename = os.path.basename(m.midi_filename.replace("/", "-"))
         log_melspec_path = os.path.join(features_dir, m.split, f"{basename}.pt")
 
-        if os.path.exists(log_melspec_path) and not force_reprocess:
+        if os.path.exists(log_melspec_path) and not force_preprocess:
             continue
 
         os.makedirs(os.path.dirname(log_melspec_path), exist_ok=True)
@@ -158,7 +159,7 @@ def main(
     dest_path: str = "maestro-v3.0.0-preprocessed",
     num_workers: int = 4,
     devices: str = "cuda:0",
-    force_reprocess: bool = False,
+    force_preprocess: bool = False,
     max_value: float = 0.0,
 ):
     with open(dataset_config, "r") as f:
@@ -175,6 +176,8 @@ def main(
         for key in keys:
             data[key] = raw_metadata[key][str(idx)]
         metadata.append(Metadata.model_validate(data))
+
+    metadata = [m for m in metadata if m.year == 2015][:1]
 
     label_dir = os.path.join(dest_path, "labels")
     features_dir = os.path.join(dest_path, "features")
@@ -198,7 +201,7 @@ def main(
                 dataset_path,
                 config,
                 label_dir,
-                force_reprocess,
+                force_preprocess,
             ),
         )
         p.start()
@@ -218,7 +221,7 @@ def main(
                 dataset_path,
                 config,
                 features_dir,
-                force_reprocess,
+                force_preprocess,
                 device,
             ),
         )
