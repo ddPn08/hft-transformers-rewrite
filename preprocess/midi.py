@@ -269,11 +269,11 @@ def create_label(
 
     for pedal in pedals:
         onpedal_frame = int(pedal.onset * num_frame_in_sec + 0.5)
-        onpedal_ms = note.onset * 1000.0
+        onpedal_ms = pedal.onset * 1000.0
         onpedal_sharpness = onset_tolerance
 
         offpedal_frame = int(pedal.offset * num_frame_in_sec + 0.5)
-        offpedal_ms = note.offset * 1000.0
+        offpedal_ms = pedal.offset * 1000.0
         offpedal_sharpness = offset_tolerance
 
         if offset_duration_tolerance_flag:
