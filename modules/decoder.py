@@ -91,6 +91,14 @@ class Decoder(nn.Module):
                 for _ in range(n_layers - 1)
             ]
         )
+        self.pos_pedal_embedding_freq = nn.Embedding(1, hid_dim)
+        self.layer_zero_pedal_freq = DecoderLayerZero(hid_dim, n_heads, pf_dim, dropout)
+        self.layers_pedal_freq = nn.ModuleList(
+            [
+                DecoderLayer(hid_dim, n_heads, pf_dim, dropout)
+                for _ in range(n_layers - 1)
+            ]
+        )
 
         self.fc_onset_freq = nn.Linear(hid_dim, 1)
         self.fc_offset_freq = nn.Linear(hid_dim, 1)
@@ -102,6 +110,10 @@ class Decoder(nn.Module):
 
         self.pos_embedding_time = nn.Embedding(n_frame, hid_dim)
         self.layers_time = nn.ModuleList(
+            [EncoderLayer(hid_dim, n_heads, pf_dim, dropout) for _ in range(n_layers)]
+        )
+        self.pos_pedal_embedding_time = nn.Embedding(n_frame, hid_dim)
+        self.layers_pedal_time = nn.ModuleList(
             [EncoderLayer(hid_dim, n_heads, pf_dim, dropout) for _ in range(n_layers)]
         )
 
@@ -124,32 +136,49 @@ class Decoder(nn.Module):
             .to(spec.device)
         )
         midi_freq = self.pos_embedding_freq(pos_freq)
+        pos_pedal_freq = (
+            torch.arange(0, 1)
+            .unsqueeze(0)
+            .repeat(batch_size * self.n_frame, 1)
+            .to(spec.device)
+        )
+        midi_pedal_freq = self.pos_pedal_embedding_freq(pos_pedal_freq)
 
         midi_freq, attention_freq = self.layer_zero_freq(spec, midi_freq)
+        midi_pedal_freq, attention_pedal_freq = self.layer_zero_pedal_freq(
+            spec, midi_pedal_freq
+        )
+
         for layer_freq in self.layers_freq:
             midi_freq, attention_freq = layer_freq(spec, midi_freq)
+        for layer_freq in self.layers_pedal_freq:
+            midi_pedal_freq, attention_pedal_freq = layer_freq(spec, midi_pedal_freq)
+
         dim = attention_freq.shape
         attention_freq = attention_freq.reshape(
             [batch_size, self.n_frame, dim[1], dim[2], dim[3]]
         )
-
+        dim_pedal = attention_pedal_freq.shape
+        attention_pedal_freq = attention_pedal_freq.reshape(
+            [batch_size, self.n_frame, dim_pedal[1], dim_pedal[2], dim_pedal[3]]
+        )
         output_onset_freq = self.fc_onset_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note]
         )
         output_offset_freq = self.fc_offset_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note]
         )
-        output_onpedal_freq = self.fc_onpedal_freq(midi_freq).reshape(
-            [batch_size, self.n_frame, self.n_note]
+        output_onpedal_freq = self.fc_onpedal_freq(midi_pedal_freq).reshape(
+            [batch_size, self.n_frame]
         )
-        output_offpedal_freq = self.fc_offpedal_freq(midi_freq).reshape(
-            [batch_size, self.n_frame, self.n_note]
+        output_offpedal_freq = self.fc_offpedal_freq(midi_pedal_freq).reshape(
+            [batch_size, self.n_frame]
         )
         output_mpe_freq = self.fc_mpe_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note]
         )
-        output_mpe_pedal_freq = self.fc_mpe_pedal_freq(midi_freq).reshape(
-            [batch_size, self.n_frame, self.n_note]
+        output_mpe_pedal_freq = self.fc_mpe_pedal_freq(midi_pedal_freq).reshape(
+            [batch_size, self.n_frame]
         )
         output_velocity_freq = self.fc_velocity_freq(midi_freq).reshape(
             [batch_size, self.n_frame, self.n_note, self.n_velocity]
@@ -161,19 +190,36 @@ class Decoder(nn.Module):
             .contiguous()
             .reshape([batch_size * self.n_note, self.n_frame, self.hid_dim])
         )
+        midi_pedal_time = (
+            midi_pedal_freq.reshape([batch_size, self.n_frame, self.hid_dim])
+            .permute(0, 2, 1)
+            .contiguous()
+            .reshape([batch_size, self.n_frame, self.hid_dim])
+        )
         pos_time = (
             torch.arange(0, self.n_frame)
             .unsqueeze(0)
             .repeat(batch_size * self.n_note, 1)
             .to(spec.device)
         )
+        pos_pedal_time = (
+            torch.arange(0, self.n_frame)
+            .unsqueeze(0)
+            .repeat(batch_size, 1)
+            .to(spec.device)
+        )
         scale_time = torch.sqrt(torch.FloatTensor([self.hid_dim])).to(spec.device)
         midi_time = self.dropout(
             (midi_time * scale_time) + self.pos_embedding_time(pos_time)
         )
+        midi_pedal_time = self.dropout(
+            (midi_pedal_time * scale_time) + self.pos_pedal_embedding_time(pos_pedal_time)
+        )
 
         for layer_time in self.layers_time:
             midi_time = layer_time(midi_time)
+        for layer_time in self.layers_pedal_time:
+            midi_pedal_time = layer_time(midi_pedal_time)
 
         output_onset_time = (
             self.fc_onset_time(midi_time)
@@ -188,15 +234,13 @@ class Decoder(nn.Module):
             .contiguous()
         )
         output_onpedal_time = (
-            self.fc_onpedal_time(midi_time)
-            .reshape([batch_size, self.n_note, self.n_frame])
-            .permute(0, 2, 1)
+            self.fc_onpedal_time(midi_pedal_time)
+            .reshape([batch_size, self.n_frame])
             .contiguous()
         )
         output_offpedal_time = (
-            self.fc_offpedal_time(midi_time)
-            .reshape([batch_size, self.n_note, self.n_frame])
-            .permute(0, 2, 1)
+            self.fc_offpedal_time(midi_pedal_time)
+            .reshape([batch_size, self.n_frame])
             .contiguous()
         )
         output_mpe_time = (
@@ -206,9 +250,8 @@ class Decoder(nn.Module):
             .contiguous()
         )
         output_mpe_pedal_time = (
-            self.fc_mpe_pedal_time(midi_time)
-            .reshape([batch_size, self.n_note, self.n_frame])
-            .permute(0, 2, 1)
+            self.fc_mpe_pedal_time(midi_pedal_time)
+            .reshape([batch_size, self.n_frame])
             .contiguous()
         )
         output_velocity_time = (

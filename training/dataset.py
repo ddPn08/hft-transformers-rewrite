@@ -91,12 +91,18 @@ class Dataset(data.Dataset):
                 mapping.label.onset_frame : mapping.label.offset_frame
             ]
             if tensor.shape[0] < self.num_frames:
-                pad = torch.zeros(
-                    self.num_frames - tensor.shape[0],
-                    tensor.shape[1],
-                    dtype=tensor.dtype,
-                )
-                tensor = torch.cat([tensor, pad], dim=0)
+                if len(tensor.shape) > 1:
+                    pad = torch.zeros(
+                        self.num_frames - tensor.shape[0],
+                        tensor.shape[1],
+                        dtype=tensor.dtype,
+                    )
+                    tensor = torch.cat([tensor, pad], dim=0)
+                else:
+                    pad = torch.zeros(
+                        self.num_frames - tensor.shape[0], dtype=tensor.dtype
+                    )
+                    tensor = torch.cat([tensor, pad], dim=0)
             labels[label] = tensor
 
         onset = labels["onset"]

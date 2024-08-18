@@ -119,13 +119,12 @@ def create_note(
 
         elif isinstance(event, PedalOff):
             sustain = False
-            if pedal_state.offset < 0:
+            if pedal_state.onset < 0 and len(pedals) > 0:
+                pedals[-1].offset = event.time
+            elif pedal_state.offset < 0:
                 pedal_state.offset = event.time
                 pedals.append(Pedal.from_state(pedal_state))
                 pedal_state = PedalState()
-            elif pedal_state.onset < 0:
-                logger.warning(f"PedalOff event without PedalOn: {event}")
-                pedals[-1].offset = event.time
 
         elif isinstance(event, NoteOn):
             state = note_states[event.pitch] if event.pitch in note_states else None
@@ -173,12 +172,15 @@ def create_label(
 
     num_frame_in_sec = feature_config.sampling_rate / feature_config.hop_sample
 
-    max_offset = max(max([note.offset for note in notes]), max([pedal.offset for pedal in pedals]))
+    max_offset = max(
+        max([note.offset for note in notes]),
+        max([pedal.offset for pedal in pedals]) if len(pedals) > 0 else 0,
+    )
 
     num_frame = int(max_offset * num_frame_in_sec + 0.5) + 1
 
     a_mpe = np.zeros((num_frame, midi_config.num_notes), dtype=np.bool_)
-    a_mpe_pedal = np.zeros((num_frame, midi_config.num_notes), dtype=np.bool_)
+    a_mpe_pedal = np.zeros(num_frame, dtype=np.bool_)
     a_onset = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
     a_offset = np.zeros((num_frame, midi_config.num_notes), dtype=np.float32)
     a_onpedal = np.zeros(num_frame, dtype=np.float32)
@@ -354,26 +356,26 @@ class Detection(BaseModel):
 def detect_event(
     hop_sec: float,
     data: np.ndarray,
-    idx: int,
+    pitch: int,
     thredhold: float,
 ):
     result: List[Detection] = []
     for i in range(len(data)):
-        if data[i][idx] >= thredhold:
+        if data[i][pitch] >= thredhold:
             left_flag = True
             for ii in range(i - 1, -1, -1):
-                if data[i][idx] > data[ii][idx]:
+                if data[i][pitch] > data[ii][pitch]:
                     left_flag = True
                     break
-                elif data[i][idx] < data[ii][idx]:
+                elif data[i][pitch] < data[ii][pitch]:
                     left_flag = False
                     break
             right_flag = True
             for ii in range(i + 1, len(data)):
-                if data[i][idx] > data[ii][idx]:
+                if data[i][pitch] > data[ii][pitch]:
                     right_flag = True
                     break
-                elif data[i][idx] < data[ii][idx]:
+                elif data[i][pitch] < data[ii][pitch]:
                     right_flag = False
                     break
 
@@ -381,21 +383,21 @@ def detect_event(
                 if (i == 0) or (i == len(data) - 1):
                     time = i * hop_sec
                 else:
-                    if data[i - 1][idx] == data[i + 1][idx]:
+                    if data[i - 1][pitch] == data[i + 1][pitch]:
                         time = i * hop_sec
-                    elif data[i - 1][idx] > data[i + 1][idx]:
+                    elif data[i - 1][pitch] > data[i + 1][pitch]:
                         time = i * hop_sec - (
                             hop_sec
                             * 0.5
-                            * (data[i - 1][idx] - data[i + 1][idx])
-                            / (data[i][idx] - data[i + 1][idx])
+                            * (data[i - 1][pitch] - data[i + 1][pitch])
+                            / (data[i][pitch] - data[i + 1][pitch])
                         )
                     else:
                         time = i * hop_sec + (
                             hop_sec
                             * 0.5
-                            * (data[i + 1][idx] - data[i - 1][idx])
-                            / (data[i][idx] - data[i - 1][idx])
+                            * (data[i + 1][pitch] - data[i - 1][pitch])
+                            / (data[i][pitch] - data[i - 1][pitch])
                         )
                 result.append(Detection(loc=i, time=time))
 
@@ -514,15 +516,12 @@ def convert_label_to_note(
     mode_offset="shorter",
 ):
     notes: List[Note] = []
-    pitch_pedals: List[PedalWithPitch] = []
     hop_sec = float(feature_config.hop_sample / feature_config.sampling_rate)
 
     for pitch in range(midi_config.num_notes):
         # find local maximum
         a_onset_detect = detect_event(hop_sec, onset, pitch, thred_onset)
         a_offset_detect = detect_event(hop_sec, offset, pitch, thred_offset)
-        a_onpedal_detect = detect_event(hop_sec, onpedal, pitch, thred_onpedal)
-        a_offpedal_detect = detect_event(hop_sec, offpedal, pitch, thred_offpedal)
 
         for time_onset, offset_value, pitch_value, velocity_value in process_label(
             midi_config,
@@ -568,44 +567,36 @@ def convert_label_to_note(
             ):
                 notes[len(notes) - 2].offset = notes[len(notes) - 1].onset
 
-        for time_onset, offset_value, pitch_value, velocity_value in process_label(
-            midi_config,
-            hop_sec,
-            pitch,
-            a_onpedal_detect,
-            a_offpedal_detect,
-            mpe_pedal,
-            thred_mpe_pedal,
-            None,
-            mode_offset,
-        ):
-            pedal = PedalWithPitch(
-                onset=float(time_onset),
-                offset=offset_value,
-                pitch=pitch_value,
-            )
-            if (
-                (len(pitch_pedals) > 1)
-                and (pedal.pitch == pitch_pedals[len(pitch_pedals) - 2].pitch)
-                and (pedal.onset < pitch_pedals[len(pitch_pedals) - 2].offset)
-            ):
-                pitch_pedals[len(pitch_pedals) - 2].offset = pedal.onset
-            else:
-                pitch_pedals.append(pedal)
-
-    notes = sorted(sorted(notes, key=lambda x: x.pitch), key=lambda x: x.onset)
-    pitch_pedals = sorted(
-        sorted(pitch_pedals, key=lambda x: x.pitch), key=lambda x: x.onset
+    a_onpedal_detect = detect_event(
+        hop_sec, np.expand_dims(onpedal, axis=1), 0, thred_onpedal
+    )
+    a_offpedal_detect = detect_event(
+        hop_sec, np.expand_dims(offpedal, axis=1), 0, thred_offpedal
     )
 
     pedals: List[Pedal] = []
 
-    for pedal in pitch_pedals:
-        new_pedal = Pedal(onset=pedal.onset, offset=pedal.offset)
-        for pedal_2 in pitch_pedals:
-            if pedal.onset > pedal_2.onset and pedal.offset < pedal_2.offset:
-                break
+    for time_onset, offset_value, pitch_value, velocity_value in process_label(
+        midi_config,
+        hop_sec,
+        0,
+        a_onpedal_detect,
+        a_offpedal_detect,
+        mpe_pedal,
+        thred_mpe_pedal,
+        None,
+        mode_offset,
+    ):
+        pedal = PedalWithPitch(
+            onset=float(time_onset),
+            offset=offset_value,
+            pitch=pitch_value,
+        )
+        if (len(pedals) > 1) and (pedal.onset < pedals[len(pedals) - 2].offset):
+            pedals[len(pedals) - 2].offset = pedal.onset
+        else:
+            pedals.append(pedal)
 
-        pedals.append(new_pedal)
+    notes = sorted(sorted(notes, key=lambda x: x.pitch), key=lambda x: x.onset)
 
     return notes, pedals

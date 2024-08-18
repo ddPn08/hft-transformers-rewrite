@@ -86,16 +86,16 @@ def main(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_onpedal_A_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_offpedal_A_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_mpe_A_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_mpe_pedal_A_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_velocity_A_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.int8
@@ -108,16 +108,16 @@ def main(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_onpedal_B_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_offpedal_B_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_mpe_B_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
     )
     output_mpe_pedal_B_all = np.zeros(
-        (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.float32
+        feature.shape[0] + len_s, dtype=np.float32
     )
     output_velocity_B_all = np.zeros(
         (feature.shape[0] + len_s, config.midi.num_notes), dtype=np.int8
