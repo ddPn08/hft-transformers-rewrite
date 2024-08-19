@@ -56,6 +56,15 @@ def main(
         collate_fn=dataset.collate_fn,
     )
 
+    val_dataset = Dataset(dir=dataset_dir, split="validation", mode=mode)
+    val_dataloader = data.DataLoader(
+        val_dataset,
+        batch_size=1,
+        shuffle=False,
+        num_workers=num_workers,
+        collate_fn=dataset.collate_fn
+    )
+
     params = TranscriberConfig(
         n_frame=config.input.num_frame,
         n_bin=config.feature.n_bins,
@@ -98,7 +107,7 @@ def main(
 
     callbacks = [
         MyProgressBar(),
-        ModelCheckpoint(every_n_epochs=1, dirpath=checkpoint_dir, save_top_k=10),
+        ModelCheckpoint(every_n_epochs=1, dirpath=checkpoint_dir, save_top_k=10, mode="min", monitor="val_loss"),
         LearningRateMonitor(logging_interval="step"),
     ]
 
@@ -111,7 +120,7 @@ def main(
         callbacks=callbacks,
         precision=precision,
     )
-    trainer.fit(module, dataloader)
+    trainer.fit(module, dataloader, val_dataloader)
 
 
 if __name__ == "__main__":
