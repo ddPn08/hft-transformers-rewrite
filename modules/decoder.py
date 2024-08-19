@@ -192,7 +192,6 @@ class Decoder(nn.Module):
         )
         midi_pedal_time = (
             midi_pedal_freq.reshape([batch_size, self.n_frame, self.hid_dim])
-            .permute(0, 2, 1)
             .contiguous()
             .reshape([batch_size, self.n_frame, self.hid_dim])
         )
