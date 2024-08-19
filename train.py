@@ -1,4 +1,5 @@
 import os
+from typing import Literal
 
 import fire
 import numpy as np
@@ -28,6 +29,7 @@ class MyProgressBar(TQDMProgressBar):
 def main(
     dataset_dir: str = "./maestro-v3.0.0-preprocessed",
     output_dir: str = "./output",
+    mode: Literal["note", "pedal"] = "note",
     accelerator: str = "gpu",
     devices: str = "0,",
     max_train_epochs: int = 100,
@@ -41,7 +43,7 @@ def main(
     with open(os.path.join(dataset_dir, "config.json"), "r") as f:
         config: DatasetConfig = DatasetConfig.model_validate_json(f.read())
 
-    dataset = Dataset(dir=dataset_dir)
+    dataset = Dataset(dir=dataset_dir, mode=mode)
     dataloader = data.DataLoader(
         dataset,
         batch_size=batch_size,
@@ -65,13 +67,14 @@ def main(
         n_note=config.midi.num_notes,
     )
     model_config = ModelConfig(
+        mode=mode,
         params=params,
         feature=config.feature,
         input=config.input,
         midi=config.midi,
     )
-    transcriber = Transcriber(params)
-    module = TranscriberModule(transcriber, torch.optim.Adam)
+    transcriber = Transcriber(params, mode=mode)
+    module = TranscriberModule(transcriber, torch.optim.Adam, mode=mode)
 
     checkpoint_dir = os.path.join(output_dir, "checkpoints")
     os.makedirs(checkpoint_dir, exist_ok=True)

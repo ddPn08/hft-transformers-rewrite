@@ -24,7 +24,7 @@ class FrameInfomation(BaseModel):
 
 
 class DatasetItem(BaseModel):
-    split: Literal['train', 'validation', 'test']
+    split: Literal["train", "validation", "test"]
     basename: str
     feature: FrameInfomation
     label: FrameInfomation
@@ -35,15 +35,19 @@ class Dataset(data.Dataset):
         self,
         dir: str,
         split: str = "train",
+        mode: Literal["pedal", "note"] = "note",
         num_frames: int = 128,
     ):
         datamapping_path = os.path.join(dir, "mapping.json")
         with open(datamapping_path, "r") as f:
             self.datamapping = TypeAdapter(List[DatasetItem]).validate_json(f.read())
-            self.datamapping = [item for item in self.datamapping if item.split == split]
+            self.datamapping = [
+                item for item in self.datamapping if item.split == split
+            ]
         config_path = os.path.join(dir, "config.json")
         with open(config_path, "r") as f:
             self.config = DatasetConfig.model_validate_json(f.read())
+        self.mode = mode
         self.features_dir = os.path.join(dir, "features")
         self.labels_dir = os.path.join(dir, "labels")
         self.num_frames = num_frames
@@ -51,8 +55,12 @@ class Dataset(data.Dataset):
     def __getitem__(self, idx: int):
         mapping = self.datamapping[idx]
 
-        feature_path = os.path.join(self.features_dir, mapping.split, mapping.basename + ".pt")
-        label_path = os.path.join(self.labels_dir, mapping.split, mapping.basename + ".pt")
+        feature_path = os.path.join(
+            self.features_dir, mapping.split, mapping.basename + ".pt"
+        )
+        label_path = os.path.join(
+            self.labels_dir, mapping.split, mapping.basename + ".pt"
+        )
 
         feature: torch.Tensor = torch.load(
             feature_path, map_location="cpu", weights_only=True
@@ -113,19 +121,31 @@ class Dataset(data.Dataset):
         mpe_pedal = labels["mpe_pedal"].float()
         velocity = labels["velocity"].long()
 
-        return spec, onset, offset, onpedal, offpedal, mpe, mpe_pedal, velocity
+        if self.mode == "note":
+            return spec, onset, offset, mpe, velocity
+        elif self.mode == "pedal":
+            return spec, onpedal, offpedal, mpe_pedal
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")
 
     def __len__(self):
         return len(self.datamapping)
 
     def collate_fn(self, batch):
-        specs, onsets, offsets, onpedals, offpedals, mpes, mpes_pedal, velocities = zip(*batch)
-        specs = torch.stack(specs)
-        onsets = torch.stack(onsets)
-        offsets = torch.stack(offsets)
-        onpedals = torch.stack(onpedals)
-        offpedals = torch.stack(offpedals)
-        mpes = torch.stack(mpes)
-        mpes_pedal = torch.stack(mpes_pedal)
-        velocities = torch.stack(velocities)
-        return specs, onsets, offsets, onpedals, offpedals, mpes, mpes_pedal, velocities
+        if self.mode == "note":
+            specs, onsets, offsets, mpes, velocities = zip(*batch)
+            specs = torch.stack(specs)
+            onsets = torch.stack(onsets)
+            offsets = torch.stack(offsets)
+            mpes = torch.stack(mpes)
+            velocities = torch.stack(velocities)
+            return specs, onsets, offsets, mpes, velocities
+        elif self.mode == "pedal":
+            specs, onpedals, offpedals, mpes_pedal = zip(*batch)
+            specs = torch.stack(specs)
+            onpedals = torch.stack(onpedals)
+            offpedals = torch.stack(offpedals)
+            mpes_pedal = torch.stack(mpes_pedal)
+            return specs, onpedals, offpedals, mpes_pedal
+        else:
+            raise ValueError(f"Invalid mode: {self.mode}")

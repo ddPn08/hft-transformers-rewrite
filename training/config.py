@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel
 
 from modules.transcriber import TranscriberConfig
@@ -37,6 +37,7 @@ class DatasetConfig(BaseModel):
     midi: MidiConfig
 
 class ModelConfig(BaseModel):
+    mode: Literal["note", "pedal"]
     params: TranscriberConfig
     feature: FeatureConfig
     input: InputConfig
