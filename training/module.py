@@ -23,21 +23,26 @@ class TranscriberModule(LightningModule):
         self.all_loss = []
         self.epoch_loss = []
 
-        self.criterion_onset_A = nn.BCEWithLogitsLoss()
-        self.criterion_offset_A = nn.BCEWithLogitsLoss()
-        self.criterion_onpedal_A = nn.BCEWithLogitsLoss()
-        self.criterion_offpedal_A = nn.BCEWithLogitsLoss()
-        self.criterion_mpe_A = nn.BCEWithLogitsLoss()
-        self.criterion_mpe_pedal_A = nn.BCEWithLogitsLoss()
-        self.criterion_velocity_A = nn.CrossEntropyLoss()
+        if mode == 'note':
+            self.criterion_onset_A = nn.BCEWithLogitsLoss()
+            self.criterion_offset_A = nn.BCEWithLogitsLoss()
+            self.criterion_mpe_A = nn.BCEWithLogitsLoss()
+            self.criterion_velocity_A = nn.CrossEntropyLoss()
 
-        self.criterion_onset_B = nn.BCEWithLogitsLoss()
-        self.criterion_offset_B = nn.BCEWithLogitsLoss()
-        self.criterion_onpedal_B = nn.BCEWithLogitsLoss()
-        self.criterion_offpedal_B = nn.BCEWithLogitsLoss()
-        self.criterion_mpe_B = nn.BCEWithLogitsLoss()
-        self.criterion_mpe_pedal_B = nn.BCEWithLogitsLoss()
-        self.criterion_velocity_B = nn.CrossEntropyLoss()
+            self.criterion_onset_B = nn.BCEWithLogitsLoss()
+            self.criterion_offset_B = nn.BCEWithLogitsLoss()
+            self.criterion_mpe_B = nn.BCEWithLogitsLoss()
+            self.criterion_velocity_B = nn.CrossEntropyLoss()
+        elif mode == 'pedal':
+            self.criterion_onpedal_A = nn.BCEWithLogitsLoss()
+            self.criterion_offpedal_A = nn.BCEWithLogitsLoss()
+            self.criterion_mpe_pedal_A = nn.BCEWithLogitsLoss()
+
+            self.criterion_onpedal_B = nn.BCEWithLogitsLoss()
+            self.criterion_offpedal_B = nn.BCEWithLogitsLoss()
+            self.criterion_mpe_pedal_B = nn.BCEWithLogitsLoss()
+        else:
+            raise ValueError(f"Invalid mode: {mode}")
 
     def forward(self, y: torch.Tensor):
         return self.model(y)
