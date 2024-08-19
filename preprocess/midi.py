@@ -582,20 +582,24 @@ def convert_label_to_note(
         0,
         a_onpedal_detect,
         a_offpedal_detect,
-        mpe_pedal,
+        np.expand_dims(mpe_pedal, axis=1),
         thred_mpe_pedal,
         None,
         mode_offset,
     ):
-        pedal = PedalWithPitch(
+        pedal = Pedal(
             onset=float(time_onset),
             offset=offset_value,
-            pitch=pitch_value,
         )
-        if (len(pedals) > 1) and (pedal.onset < pedals[len(pedals) - 2].offset):
-            pedals[len(pedals) - 2].offset = pedal.onset
-        else:
-            pedals.append(pedal)
+        pedals.append(pedal)
+
+        if (
+            (len(pedals) > 1)
+            and (pedals[len(pedals) - 1].onset < pedals[len(pedals) - 2].offset)
+        ):
+            pedals[len(pedals) - 2].offset = pedals[len(pedals) - 1].onset - 0.01
+
+    print("pedals", pedals)
 
     notes = sorted(sorted(notes, key=lambda x: x.pitch), key=lambda x: x.onset)
 
