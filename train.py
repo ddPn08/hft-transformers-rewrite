@@ -7,7 +7,11 @@ import torch
 import torch.utils.data as data
 from lightning.fabric.plugins.precision.precision import _PRECISION_INPUT
 from lightning.pytorch import Trainer
-from lightning.pytorch.callbacks import ModelCheckpoint, TQDMProgressBar
+from lightning.pytorch.callbacks import (
+    LearningRateMonitor,
+    ModelCheckpoint,
+    TQDMProgressBar,
+)
 
 from modules.transcriber import Transcriber, TranscriberConfig
 from training.config import DatasetConfig, ModelConfig
@@ -94,7 +98,8 @@ def main(
 
     callbacks = [
         MyProgressBar(),
-        ModelCheckpoint(every_n_train_steps=50, dirpath=checkpoint_dir),
+        ModelCheckpoint(every_n_epochs=1, dirpath=checkpoint_dir, save_top_k=10),
+        LearningRateMonitor(logging_interval="step"),
     ]
 
     trainer = Trainer(
