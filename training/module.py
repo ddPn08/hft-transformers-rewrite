@@ -234,7 +234,7 @@ class TranscriberModule(LightningModule):
             loss = loss_A + loss_B
 
             self.all_loss.append(loss.item())
-            self.log("val_loss", loss)
+            self.log("val_loss", loss, sync_dist=True)
 
             return loss
         
