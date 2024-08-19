@@ -59,7 +59,7 @@ def main(
     val_dataset = Dataset(dir=dataset_dir, split="validation", mode=mode)
     val_dataloader = data.DataLoader(
         val_dataset,
-        batch_size=1,
+        batch_size=batch_size,
         shuffle=False,
         num_workers=num_workers,
         collate_fn=dataset.collate_fn
